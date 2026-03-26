@@ -1,812 +1,726 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
 
-// ─────────────────────────────────────────────
-// TIFFANY'S PROFILE — lives in every Claude call
-// ─────────────────────────────────────────────
-const PROFILE = `You are Tiffany's personal second brain, life operating system, and thinking partner. You know her fully. Read this before every response.
+const T = {
+  bg:"#0F0D0C", surface:"#161210", card:"#1C1815", border:"#272220",
+  borderLight:"#333028", gold:"#C4955A", goldLight:"#D4A870", wine:"#8B3A52",
+  cream:"#F0E8DC", muted:"#8A8078", mutedLight:"#B8AFA5", green:"#5A7A62",
+  blue:"#4A6B8A", purple:"#6A5A8A",
+};
 
-WHO SHE IS:
-Tiffany is a multifaceted woman in her early 20s — finishing school, building a brand (Vixens N Darlings), working 3 jobs, and figuring out who she wants to become. She is Blair Waldorf, not Serena. Precise, ambitious, aesthetics-minded. She spent too long trying to be the "loose and fun" version of herself that doesn't fit. She feels deeply, processes at a high volume, and internalizes other people's opinions in ways that can derail her. She is not too much. She hasn't found the spaces that match her depth yet.
-
-IDENTITY:
-- Honors student her whole life — now questioning direction post-graduation
-- Multifaceted: loves tech/AI AND Harry Potter AND Disney AND philosophy AND makeup AND drawing AND painting AND singing AND fun conspiracy theories AND Substack deep reads
-- Changes her hair color because she's still finding what feels most like her
-- The "floater" friend — belongs to many worlds, fully centered in none yet
-- Wants to be early, not just on time. Cares about her appearance and self-love.
-- Spiral pattern: feels something → doesn't feel heard → goes quiet → internalizes → self-criticizes → "I wish I wasn't such a fuck up" — challenge this pattern directly when it shows up
-- Waitlisted for law school. Unsure if law is even the right path.
-- Goal: work in tech, AI, or leadership — somewhere she can learn, code, analyze, and make a real difference
-
-HER BRAND — VIXENS N DARLINGS:
-- Clothing brand. Hoodies first. One sample produced, corrections made, second sample in production.
-- Tech pack and 5-minute pitch deck complete.
-- Mission: heal who she was at 14 — the girl who couldn't be put in a box, too much for some rooms, not enough for others
-- Vision: a world (the Pinky Promise Club) where multifaceted women — the floaters, the ones with too many passions, the ones always playing sidekick in someone else's story — feel seen, empowered, and capable of taking a leap
-- Empowerment marketplace roadmap: hoodies → charms/accessories → events → podcast → newsletter → community
-- Content struggle: she knows what she believes but hasn't cracked how to turn it into hooks that land
-- Investor struggle: tried making it "business casual" but that's not her passion. The real pain point is harder to articulate: women who are multidimensional in a world that wants them to pick one lane.
-
-SOCIAL MEDIA — @tunedinwithtiff (TikTok, main):
-- Started November 2025. Currently 350 followers. Actively growing.
-- 4 content buckets: (1) Education & Business: Mentor Minutes, Practice > Preach, Respectfully No, Founder BTS (2) Fitness & Nutrition: workout routines, recipes, goals, new workouts (3) Science & Routines: morning routine science, Substack Rewind, learning (4) Hobbies: makeup, drawing, painting, singing, Filling Up My Cup
-- Other accounts: 84K from high school (mostly dead, TikTok Shop only); separate book promo account (20 videos/month, active brand deal)
-- YouTube: cross-posting TikTok shorts
-- Goal: build a community around what she stands for, the value she brings, a real window into her world
-
-ACTIVE WORK:
-1. Cafe/YPO: Cafe mostly self-sufficient. New project: photographing, cataloguing, describing rare baseball memorabilia. Also assists Justin (YPO mentorship chair) — this semester: YNG mentees kickoff, needs SMART goal worksheets for mentor matches.
-2. Insurance: Just passed life insurance exam. Starting online onboarding. Part-time for now; intended to become primary income in grad life when cafe ends.
-3. Book promo brand deal: 20 TikTok videos/month.
-
-MONEY: 3 income sources to track. Needs a real budget. Grad school loans incoming. Has money market, stocks, and crypto. Wants to invest consistently and build for the future.
-
-WELLNESS GOALS:
-- 10,000 steps/day
-- 30–45 minute workout daily (videos, weights, etc.)
-- Solidcore once/month (committed)
-- End goal: lean with muscle, able to maintain — she does better with a plan she doesn't have to think about. She won't commit to things she doesn't trust to get her to her goal.
-- Night eating: wakes up mid-night and eats, wakes feeling bad — this is the primary wellness issue right now
-- Sleep is disrupted by the night eating
-- Anxiety and emotional spirals need grounding tools, not generic advice
-
-SCHOOL & FUTURE: Finishing now. Grad life begins May — cafe ends, insurance becomes primary. Wants tech/AI/leadership career.
-
-3-YEAR VISION: 100K–400K followers excited about clothing and charm drops. A podcast where women DM her saying she helped them. Working in tech, AI, or leadership. Pinky Promise Club is real. She knows who she is.
-
-HER RULES:
-1. Finish before opening something new
-2. Plans beat willpower — build the system, trust the system
-3. Don't shrink. Take up space.
-4. When in the spiral: get in the body or get in the work
-5. She is not too much. She is the right amount for the right spaces.
-
-HOW TO COACH HER: Direct and specific — no softening, no generic affirmations, no fluff. Name the spiral when you see it. Call out avoidance. Remind her of her system. The brand, the content, the wellness — all connected to the same question she's working through: who am I and what do I stand for?`;
-
-// ─────────────────────────────────────────────
-// HELPERS
-// ─────────────────────────────────────────────
-function load(key, def = null) {
-  if (typeof window === 'undefined') return def;
-  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : def; } catch { return def; }
-}
-function save(key, val) {
-  if (typeof window === 'undefined') return;
-  try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
-}
-
-async function callClaude(messages, system) {
-  const res = await fetch('/api/claude', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1000, system, messages }),
-  });
-  const data = await res.json();
-  return data.content?.filter(b => b.type === 'text').map(b => b.text).join('') || '';
-}
-
-function urgency(t) {
-  if (!t || t.status === 'Done') return 'Done';
-  if (!t.due) return 'No date';
-  const d = Math.floor((new Date(t.due + 'T00:00:00') - new Date()) / 86400000);
-  if (d < 0) return 'Overdue'; if (d === 0) return 'Today'; if (d <= 3) return 'Soon'; return 'Later';
-}
-function score(t) {
-  if (!t || t.status === 'Done') return 0;
-  let s = t.priority === 'P1' ? 30 : t.priority === 'P2' ? 20 : 10;
-  if (t.today || t.finishFirst) s += 25; if (t.thisWeek) s += 15;
-  const u = urgency(t);
-  if (u === 'Overdue') s += 30; else if (u === 'Today') s += 20; else if (u === 'Soon') s += 10;
-  return s;
-}
-function mkTask(o = {}) {
-  return { id: Date.now().toString() + Math.random().toString(36).slice(2), title: '', status: 'Inbox', priority: 'P2', area: '', due: '', energy: '', finishFirst: false, thisWeek: false, today: false, notes: '', created: new Date().toISOString(), ...o };
-}
-
-const AREAS = ['Social Media', 'Brand', 'Insurance', 'Cafe/YPO', 'School', 'Money', 'Life Admin', 'Wellness', 'Personal', 'Grad Life'];
-const MOODS = ['', 'Rough', 'Low', 'Okay', 'Good', 'Great'];
-
-// ─────────────────────────────────────────────
-// CSS
-// ─────────────────────────────────────────────
-const CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Karla:wght@300;400;500;600&display=swap');
-*{margin:0;padding:0;box-sizing:border-box}
-:root{
-  --bg:#F7F5F0;--surf:#FFFFFF;--border:#E2DDD4;--border2:#C4BEB5;
-  --text:#1C1912;--muted:#7A7469;--faint:#B5B0A8;
-  --gold:#B8880A;--gbg:#FDF3DC;--gring:#E8C84C;
-  --red:#A33030;--rbg:#FDF0EF;
-  --green:#2D6B45;--gbg2:#EDF6F1;
-  --blue:#1A4E8A;--bbg:#EEF3FB;
-  --purple:#5A3E8A;--pbg:#F0EBFB;
-}
-html,body{background:#F7F5F0;min-height:100vh}
-body{color:var(--text);font-family:'Karla',sans-serif;font-size:14px;line-height:1.6}
-.app{max-width:860px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column}
-.hdr{padding:15px 22px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border);background:var(--surf);position:sticky;top:0;z-index:20}
-.hdr-name{font-family:'Libre Baskerville',serif;font-size:20px;font-weight:700;letter-spacing:-.01em}
-.hdr-sub{font-size:10px;color:var(--muted);letter-spacing:.16em;text-transform:uppercase;font-weight:600}
-.hdr-date{margin-left:auto;font-size:12px;color:var(--muted)}
-.nav{display:flex;gap:2px;padding:8px 18px;border-bottom:1px solid var(--border);background:var(--surf);overflow-x:auto}
-.nav::-webkit-scrollbar{display:none}
-.nb{background:none;border:none;padding:7px 13px;border-radius:6px;font-family:'Karla',sans-serif;font-size:13px;font-weight:500;color:var(--muted);cursor:pointer;transition:all .13s;white-space:nowrap}
-.nb:hover{color:var(--text);background:var(--bg)}
-.nb.on{color:var(--gold);background:var(--gbg)}
-.body{flex:1;padding:22px 22px;max-width:820px;width:100%}
-.card{background:var(--surf);border:1px solid var(--border);border-radius:10px;padding:18px;margin-bottom:14px}
-.card-t{font-family:'Libre Baskerville',serif;font-size:16px;font-weight:700;margin-bottom:12px}
-.sl{font-size:10px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin:22px 0 8px;display:flex;align-items:center;gap:8px}
-.sl:first-child{margin-top:0}
-.sl-b{background:var(--border);color:var(--muted);border-radius:20px;padding:1px 7px;font-size:10px}
-.callout{background:var(--gbg);border-left:3px solid var(--gring);border-radius:0 6px 6px 0;padding:10px 14px;font-size:13px;font-style:italic;margin-bottom:14px}
-.stat-row{display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap}
-.stat{flex:1;min-width:80px;background:var(--surf);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center}
-.stat-n{font-family:'Libre Baskerville',serif;font-size:26px;line-height:1;margin-bottom:2px}
-.stat-l{font-size:10px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;font-weight:600}
-.ti{display:flex;align-items:flex-start;gap:9px;padding:10px 12px;border-radius:8px;border:1px solid var(--border);margin-bottom:4px;background:var(--surf)}
-.ti:hover{border-color:var(--border2)}
-.ti.done{opacity:.35}
-.ti.ff{border-left:2.5px solid var(--gold)}
-.ti.ov{border-left:2.5px solid var(--red)}
-.chk{width:16px;height:16px;min-width:16px;border-radius:50%;border:1.5px solid var(--border2);cursor:pointer;display:flex;align-items:center;justify-content:center;margin-top:2px;flex-shrink:0}
-.chk.on{background:var(--green);border-color:var(--green)}
-.tb{flex:1;min-width:0}
-.tt{font-size:14px;line-height:1.45;word-break:break-word}
-.tm{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
-.tag{font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;letter-spacing:.04em}
-.tp1{background:var(--rbg);color:var(--red)}
-.tp2{background:var(--gbg);color:var(--gold)}
-.tp3{background:var(--bg);color:var(--muted);border:1px solid var(--border)}
-.ta{background:var(--bbg);color:var(--blue)}
-.tff{background:var(--gbg);color:var(--gold);font-weight:700}
-.tov{background:var(--rbg);color:var(--red)}
-.tto{background:var(--gbg);color:var(--gold)}
-.tso{background:var(--gbg2);color:var(--green)}
-.tmu{background:var(--bg);color:var(--muted);border:1px solid var(--border)}
-.tac{display:flex;gap:4px;opacity:0;flex-shrink:0;margin-top:1px}
-.ti:hover .tac{opacity:1}
-.ib{background:none;border:none;cursor:pointer;color:var(--faint);font-size:13px;padding:2px 5px;border-radius:4px}
-.ib:hover{color:var(--text)}
-input,select,textarea{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-family:'Karla',sans-serif;font-size:13px;outline:none;transition:border-color .13s;width:100%}
-input:focus,select:focus,textarea:focus{border-color:var(--gold)}
-input::placeholder,textarea::placeholder{color:var(--faint)}
-.lbl{font-size:11px;color:var(--muted);margin-bottom:4px;letter-spacing:.07em;font-weight:600;display:block}
-.frow{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
-.fi{flex:1;min-width:110px}
-.cbr{display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;user-select:none}
-.cbr input[type=checkbox]{width:auto;cursor:pointer;accent-color:var(--gold)}
-.btn{padding:8px 18px;border-radius:7px;border:none;font-family:'Karla',sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:all .13s;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
-.btn-p{background:var(--gold);color:#FFF}
-.btn-p:hover:not(:disabled){background:#A07808}
-.btn-p:disabled{opacity:.5;cursor:not-allowed}
-.btn-g{background:none;color:var(--muted);border:1px solid var(--border)}
-.btn-g:hover{color:var(--text);border-color:var(--border2)}
-.chat-wrap{display:flex;flex-direction:column;height:480px;background:var(--surf);border:1px solid var(--border);border-radius:10px;overflow:hidden}
-.chat-msgs{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px}
-.msg{max-width:85%;padding:10px 14px;border-radius:10px;font-size:13px;line-height:1.7;white-space:pre-wrap}
-.msg.u{background:var(--gbg);border:1px solid rgba(184,136,10,.2);align-self:flex-end;border-bottom-right-radius:3px}
-.msg.a{background:var(--bg);border:1px solid var(--border);align-self:flex-start;border-bottom-left-radius:3px}
-.chat-in{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--border)}
-.chat-in input{flex:1}
-.dots span{display:inline-block;animation:bl 1.1s infinite;font-size:18px;color:var(--muted)}
-.dots span:nth-child(2){animation-delay:.2s}
-.dots span:nth-child(3){animation-delay:.4s}
-@keyframes bl{0%,100%{opacity:.2}50%{opacity:1}}
-.empty{text-align:center;color:var(--faint);padding:32px;font-style:italic;font-size:13px}
-.start-c{text-align:center;padding:48px 24px}
-.start-t{font-family:'Libre Baskerville',serif;font-size:22px;font-weight:700;margin-bottom:8px}
-.start-s{font-size:13px;color:var(--muted);margin-bottom:22px;max-width:380px;margin-left:auto;margin-right:auto;line-height:1.7}
-.pbar{height:6px;border-radius:3px;background:var(--border);overflow:hidden;margin-top:5px}
-.pfill{height:100%;border-radius:3px;transition:width .3s}
-.ni{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--border);font-size:14px;cursor:pointer;user-select:none}
-.ni:last-child{border-bottom:none}
-.ni.on{color:var(--muted);text-decoration:line-through}
-.ni input[type=checkbox]{width:16px;height:16px;min-width:16px;cursor:pointer;accent-color:var(--gold)}
-.brief-box{padding:16px;background:var(--surf);border:1px solid var(--border);border-left:3px solid var(--gold);border-radius:10px;margin-bottom:16px;font-size:13px;line-height:1.85;white-space:pre-wrap}
-.q-btn{display:block;width:100%;text-align:left;padding:10px 14px;border-radius:8px;border:1px solid var(--border);background:none;font-family:'Karla',sans-serif;font-size:13px;color:var(--text);cursor:pointer;margin-bottom:6px;transition:all .13s}
-.q-btn:hover{border-color:var(--gold);background:var(--gbg)}
-::-webkit-scrollbar{width:4px}
-::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
-@media(max-width:560px){
-  .body{padding:14px 14px}
-  .hdr{padding:12px 14px}
-  .nav{padding:6px 10px}
-  .nb{padding:6px 9px;font-size:12px}
-  .stat-n{font-size:22px}
-}
-`;
-
-// ─────────────────────────────────────────────
-// TASK ITEM
-// ─────────────────────────────────────────────
-function TaskItem({ task: t, onDone, onFlag, onDelete }) {
-  const u = urgency(t);
-  const done = t.status === 'Done';
-  return (
-    <div className={`ti ${done ? 'done' : ''} ${t.finishFirst && !done ? 'ff' : ''} ${u === 'Overdue' && !done ? 'ov' : ''}`}>
-      <div className={`chk ${done ? 'on' : ''}`} onClick={() => onDone?.(t.id)}>
-        {done && <span style={{ color: '#fff', fontSize: '9px', fontWeight: 'bold', lineHeight: 1 }}>✓</span>}
-      </div>
-      <div className="tb">
-        <div className="tt" style={{ textDecoration: done ? 'line-through' : 'none' }}>{t.title || 'Untitled'}</div>
-        <div className="tm">
-          {t.priority === 'P1' && <span className="tag tp1">P1</span>}
-          {t.priority === 'P2' && <span className="tag tp2">P2</span>}
-          {t.priority === 'P3' && <span className="tag tp3">P3</span>}
-          {t.area && <span className="tag ta">{t.area}</span>}
-          {t.finishFirst && !done && <span className="tag tff">Finish First</span>}
-          {!done && u === 'Overdue' && <span className="tag tov">Overdue</span>}
-          {!done && u === 'Today' && <span className="tag tto">Today</span>}
-          {!done && u === 'Soon' && t.due && <span className="tag tso">{new Date(t.due + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>}
-          {!done && u === 'Later' && t.due && <span className="tag tmu">{new Date(t.due + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>}
-          {t.energy && <span className="tag tmu">{t.energy}</span>}
-        </div>
-      </div>
-      {(onFlag || onDelete) && (
-        <div className="tac">
-          {onFlag && <button className="ib" onClick={() => onFlag(t.id)}>{t.finishFirst ? '★' : '☆'}</button>}
-          {onDelete && <button className="ib" onClick={() => onDelete(t.id)}>✕</button>}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────
-// TODAY TAB
-// ─────────────────────────────────────────────
-function TodayTab({ tasks, onDone, onFlag, onDelete }) {
-  const [brief, setBrief] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  const todayTasks = tasks
-    .filter(t => t.status !== 'Done' && t.status !== 'Archived' && (t.today || t.finishFirst || urgency(t) === 'Today' || urgency(t) === 'Overdue'))
-    .sort((a, b) => { if (a.finishFirst !== b.finishFirst) return a.finishFirst ? -1 : 1; return score(b) - score(a); });
-  const ff = tasks.filter(t => t.finishFirst && t.status !== 'Done');
-  const ov = tasks.filter(t => urgency(t) === 'Overdue' && t.status !== 'Done').length;
-  const done = tasks.filter(t => t.status === 'Done').length;
-  const upcoming = tasks.filter(t => {
-    if (t.status === 'Done' || !t.due) return false;
-    const d = Math.floor((new Date(t.due + 'T00:00:00') - new Date()) / 86400000);
-    return d > 0 && d <= 14;
-  }).sort((a, b) => new Date(a.due) - new Date(b.due)).slice(0, 6);
-
-  const getMorningBrief = async () => {
-    setLoading(true);
-    const top5 = todayTasks.slice(0, 5).map(t => t.title).filter(Boolean).join(', ') || 'None flagged yet';
-    const ffStr = ff.map(t => t.title).filter(Boolean).join(', ') || 'Empty';
-    const sys = PROFILE + "\n\nGenerate Tiffany's morning brief. 2–3 short paragraphs. Personal, direct, grounding. Name what actually matters today based on her task data. Reference her context. No generic affirmations. End with one clear first move.";
-    try {
-      const r = await callClaude([{ role: 'user', content: `Morning brief. Today's tasks: ${top5}. Finish First queue: ${ffStr}. Overdue: ${ov}. Done so far: ${done}.` }], sys);
-      setBrief(r);
-    } catch { setBrief('Could not generate brief — check your API key in Vercel settings.'); }
-    setLoading(false);
-  };
-
-  return (
-    <div>
-      <div className="stat-row">
-        <div className="stat"><div className="stat-n">{todayTasks.length}</div><div className="stat-l">Today</div></div>
-        <div className="stat"><div className="stat-n" style={{ color: ov > 0 ? 'var(--red)' : 'inherit' }}>{ov}</div><div className="stat-l">Overdue</div></div>
-        <div className="stat"><div className="stat-n" style={{ color: 'var(--green)' }}>{done}</div><div className="stat-l">Done</div></div>
-        <div className="stat"><div className="stat-n" style={{ color: 'var(--gold)' }}>{ff.length}</div><div className="stat-l">Finish First</div></div>
-      </div>
-
-      {!brief ? (
-        <div className="card" style={{ textAlign: 'center', padding: '20px' }}>
-          <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 14 }}>Get your personalized morning brief — reads your full context and today's priorities.</div>
-          <button className="btn btn-p" onClick={getMorningBrief} disabled={loading}>
-            {loading ? 'Generating...' : 'Get Morning Brief'}
-          </button>
-        </div>
-      ) : (
-        <div className="brief-box">
-          {brief}
-          <div style={{ marginTop: 10 }}><button className="btn btn-g" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => setBrief('')}>Refresh</button></div>
-        </div>
-      )}
-
-      {ff.length > 0 && <>
-        <div className="sl">Finish First <span className="sl-b">{ff.length}</span></div>
-        <div className="callout">Close these before touching anything new.</div>
-        {ff.map(t => <TaskItem key={t.id} task={t} onDone={onDone} onFlag={onFlag} onDelete={onDelete} />)}
-      </>}
-
-      <div className="sl">Today's Priorities <span className="sl-b">{todayTasks.length}</span></div>
-      {todayTasks.length > 0
-        ? todayTasks.map(t => <TaskItem key={t.id} task={t} onDone={onDone} onFlag={onFlag} onDelete={onDelete} />)
-        : <div className="empty">Nothing flagged for today. Add tasks in Capture.</div>}
-
-      {upcoming.length > 0 && <>
-        <div className="sl">Upcoming — Next 14 Days</div>
-        {upcoming.map(t => <TaskItem key={t.id} task={t} onDone={onDone} onFlag={onFlag} onDelete={onDelete} />)}
-      </>}
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────
-// CAPTURE TAB
-// ─────────────────────────────────────────────
-function CaptureTab({ onAddTask }) {
-  const [mode, setMode] = useState('task');
-  const [f, setF] = useState({ title: '', priority: 'P2', area: '', due: '', energy: '', today: false, thisWeek: false, finishFirst: false });
-  const [dumps, setDumps] = useState([]);
-  const [di, setDi] = useState('');
-  const [da, setDa] = useState('');
-
-  useEffect(() => { setDumps(load('tff_dumps', [])); }, []);
-  useEffect(() => { save('tff_dumps', dumps); }, [dumps]);
-
-  const submitTask = () => {
-    if (!f.title.trim()) return;
-    onAddTask(mkTask({ ...f, status: 'Inbox' }));
-    setF({ title: '', priority: 'P2', area: '', due: '', energy: '', today: false, thisWeek: false, finishFirst: false });
-  };
-  const submitDump = () => {
-    if (!di.trim()) return;
-    setDumps(p => [{ id: Date.now().toString(), text: di, area: da, done: false, created: new Date().toISOString() }, ...p]);
-    setDi(''); setDa('');
-  };
-  const unproc = dumps.filter(d => !d.done);
-
-  return (
-    <div>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
-        <button className={`btn ${mode === 'task' ? 'btn-p' : 'btn-g'}`} onClick={() => setMode('task')}>Add Task</button>
-        <button className={`btn ${mode === 'dump' ? 'btn-p' : 'btn-g'}`} onClick={() => setMode('dump')}>Brain Dump{unproc.length > 0 ? ` (${unproc.length})` : ''}</button>
-      </div>
-      {mode === 'task' ? (
-        <div className="card">
-          <div className="card-t">New Task</div>
-          <label className="lbl">What needs to happen?</label>
-          <input style={{ marginBottom: 12, fontSize: 15 }} placeholder="Task name..." value={f.title} onChange={e => setF(p => ({ ...p, title: e.target.value }))} onKeyDown={e => e.key === 'Enter' && submitTask()} autoFocus />
-          <div className="frow">
-            <div className="fi"><label className="lbl">Priority</label><select value={f.priority} onChange={e => setF(p => ({ ...p, priority: e.target.value }))}>{['P1', 'P2', 'P3'].map(x => <option key={x}>{x}</option>)}</select></div>
-            <div className="fi"><label className="lbl">Area</label><select value={f.area} onChange={e => setF(p => ({ ...p, area: e.target.value }))}><option value="">—</option>{AREAS.map(x => <option key={x}>{x}</option>)}</select></div>
-            <div className="fi"><label className="lbl">Due</label><input type="date" value={f.due} onChange={e => setF(p => ({ ...p, due: e.target.value }))} /></div>
-            <div className="fi"><label className="lbl">Energy</label><select value={f.energy} onChange={e => setF(p => ({ ...p, energy: e.target.value }))}><option value="">—</option>{['10 Min', 'Light', 'Medium', 'Deep'].map(x => <option key={x}>{x}</option>)}</select></div>
-          </div>
-          <div style={{ display: 'flex', gap: 16, marginBottom: 14, flexWrap: 'wrap' }}>
-            <label className="cbr"><input type="checkbox" checked={f.today} onChange={e => setF(p => ({ ...p, today: e.target.checked }))} /> Today</label>
-            <label className="cbr"><input type="checkbox" checked={f.thisWeek} onChange={e => setF(p => ({ ...p, thisWeek: e.target.checked }))} /> This Week</label>
-            <label className="cbr"><input type="checkbox" checked={f.finishFirst} onChange={e => setF(p => ({ ...p, finishFirst: e.target.checked }))} /> Finish First</label>
-          </div>
-          <button className="btn btn-p" onClick={submitTask}>Add Task</button>
-        </div>
-      ) : (
-        <div className="card">
-          <div className="card-t">Brain Dump</div>
-          <div className="callout">Get it out of your head. Don't think about where it goes yet.</div>
-          <input style={{ marginBottom: 10, fontSize: 15 }} placeholder="What's on your mind?" value={di} onChange={e => setDi(e.target.value)} onKeyDown={e => e.key === 'Enter' && submitDump()} autoFocus />
-          <div style={{ marginBottom: 14 }}>
-            <select value={da} onChange={e => setDa(e.target.value)} style={{ width: 'auto' }}>
-              <option value="">No area</option>{AREAS.map(a => <option key={a}>{a}</option>)}
-            </select>
-          </div>
-          <button className="btn btn-p" onClick={submitDump} style={{ marginBottom: 22 }}>Capture</button>
-          {unproc.length > 0 && <>
-            <div className="sl" style={{ marginTop: 8 }}>To Process <span className="sl-b">{unproc.length}</span></div>
-            {unproc.map(d => (
-              <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: '1px solid var(--border)' }}>
-                <div style={{ flex: 1 }}><div style={{ fontSize: 14 }}>{d.text}</div>{d.area && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{d.area}</div>}</div>
-                <button className="btn btn-g" style={{ padding: '3px 10px', fontSize: 12 }} onClick={() => setDumps(p => p.map(x => x.id === d.id ? { ...x, done: true } : x))}>Done ✓</button>
-              </div>
-            ))}
-          </>}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────
-// WELLNESS TAB
-// ─────────────────────────────────────────────
-function WellnessTab({ today: tw, onSave, log }) {
-  const [w, setW] = useState({ steps: '', workout: false, workoutType: '', workoutMins: '', water: '', sleepHours: '', sleepQuality: '', nightEating: false, mood: '', spiral: '', reset: '' });
-  useEffect(() => { if (tw && Object.keys(tw).length > 0) setW(p => ({ ...p, ...tw })); }, [tw]);
-  const upd = (k, v) => { const n = { ...w, [k]: v }; setW(n); onSave(n); };
-  const sp = Math.min(100, Math.round((parseInt(w.steps) || 0) / 10000 * 100));
-  const wp = Math.min(100, Math.round((parseInt(w.water) || 0) / 8 * 100));
-
-  return (
-    <div>
-      <div className="callout">You do better with a plan you don't have to think about. Log it — trust the system.</div>
-      <div className="card">
-        <div className="card-t">Movement</div>
-        <div className="frow">
-          <div className="fi">
-            <label className="lbl">Steps Today</label>
-            <input type="number" placeholder="0" value={w.steps} onChange={e => upd('steps', e.target.value)} />
-            <div className="pbar"><div className="pfill" style={{ width: `${sp}%`, background: sp >= 100 ? 'var(--green)' : 'var(--gold)' }} /></div>
-            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>{sp}% of 10,000</div>
-          </div>
-          <div className="fi">
-            <label className="lbl">Water (glasses)</label>
-            <input type="number" placeholder="0" value={w.water} onChange={e => upd('water', e.target.value)} />
-            <div className="pbar"><div className="pfill" style={{ width: `${wp}%`, background: 'var(--blue)' }} /></div>
-            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>{wp}% of 8 glasses</div>
-          </div>
-        </div>
-        <label className="cbr" style={{ marginBottom: 10 }}><input type="checkbox" checked={!!w.workout} onChange={e => upd('workout', e.target.checked)} /> Workout done today</label>
-        {w.workout && <div className="frow">
-          <div className="fi"><label className="lbl">What?</label><input placeholder="YouTube video, weights, walk..." value={w.workoutType} onChange={e => upd('workoutType', e.target.value)} /></div>
-          <div className="fi" style={{ maxWidth: 100 }}><label className="lbl">Minutes</label><input type="number" placeholder="30" value={w.workoutMins} onChange={e => upd('workoutMins', e.target.value)} /></div>
-        </div>}
-      </div>
-      <div className="card">
-        <div className="card-t">Sleep & Night Eating</div>
-        <div className="frow" style={{ marginBottom: 10 }}>
-          <div className="fi"><label className="lbl">Hours Slept</label><input type="number" step="0.5" placeholder="7.5" value={w.sleepHours} onChange={e => upd('sleepHours', e.target.value)} /></div>
-          <div className="fi"><label className="lbl">Sleep Quality</label>
-            <select value={w.sleepQuality} onChange={e => upd('sleepQuality', e.target.value)}>
-              <option value="">—</option>
-              {[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n} — {['Terrible', 'Poor', 'Okay', 'Good', 'Great'][n - 1]}</option>)}
-            </select>
-          </div>
-        </div>
-        <label className="cbr"><input type="checkbox" checked={!!w.nightEating} onChange={e => upd('nightEating', e.target.checked)} /> Night eating happened last night</label>
-        {w.nightEating && <div style={{ marginTop: 8, fontSize: 12, color: 'var(--muted)', fontStyle: 'italic' }}>Noted. No judgment — just tracking the pattern.</div>}
-      </div>
-      <div className="card">
-        <div className="card-t">Emotional Check-In</div>
-        <label className="lbl">Mood today</label>
-        <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-          {[1, 2, 3, 4, 5].map(n => (
-            <button key={n} className={`btn ${parseInt(w.mood) === n ? 'btn-p' : 'btn-g'}`} style={{ padding: '6px 14px' }} onClick={() => upd('mood', n)}>
-              {['Rough', 'Low', 'Okay', 'Good', 'Great'][n - 1]}
-            </button>
-          ))}
-        </div>
-        <label className="lbl">Anything making me spiral today?</label>
-        <textarea rows={2} style={{ marginBottom: 10, resize: 'vertical' }} placeholder="Get it out — this feeds into your nightly wind-down..." value={w.spiral} onChange={e => upd('spiral', e.target.value)} />
-        <label className="lbl">One reset action for today</label>
-        <input placeholder="One thing I can do in 10 minutes..." value={w.reset} onChange={e => upd('reset', e.target.value)} />
-      </div>
-      {Object.keys(log).length > 1 && (
-        <div className="card">
-          <div className="card-t">Recent Pattern</div>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 440 }}>
-              <thead><tr>{['Date', 'Steps', 'Workout', 'Sleep', 'Night Eat', 'Mood'].map(h => (
-                <th key={h} style={{ padding: '4px 8px', textAlign: 'left', color: 'var(--muted)', fontWeight: 600, borderBottom: '1px solid var(--border)' }}>{h}</th>
-              ))}</tr></thead>
-              <tbody>{Object.entries(log).sort(([a], [b]) => b.localeCompare(a)).slice(0, 7).map(([date, d]) => (
-                <tr key={date}>
-                  <td style={{ padding: '5px 8px', borderBottom: '1px solid var(--border)' }}>{new Date(date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</td>
-                  <td style={{ padding: '5px 8px', borderBottom: '1px solid var(--border)', color: parseInt(d.steps) >= 10000 ? 'var(--green)' : d.steps ? 'inherit' : 'var(--faint)' }}>{d.steps || '—'}</td>
-                  <td style={{ padding: '5px 8px', borderBottom: '1px solid var(--border)' }}>{d.workout ? '✓' : '—'}</td>
-                  <td style={{ padding: '5px 8px', borderBottom: '1px solid var(--border)' }}>{d.sleepHours ? `${d.sleepHours}h` : '—'}</td>
-                  <td style={{ padding: '5px 8px', borderBottom: '1px solid var(--border)', color: d.nightEating ? 'var(--red)' : 'inherit' }}>{d.nightEating ? 'Yes' : '—'}</td>
-                  <td style={{ padding: '5px 8px', borderBottom: '1px solid var(--border)' }}>{d.mood ? MOODS[d.mood] : '—'}</td>
-                </tr>
-              ))}</tbody>
-            </table>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────
-// NIGHTLY TAB
-// ─────────────────────────────────────────────
-function NightlyTab({ tasks, wellness }) {
-  const [phase, setPhase] = useState('checks');
-  const [checks, setChecks] = useState({ done: false, moved: false, loops: false, tomorrow: false });
-  const [refs, setRefs] = useState({ done: '', heavy: '', tomorrow: '' });
-  const [msgs, setMsgs] = useState([]);
-  const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [started, setStarted] = useState(false);
-  const bottomRef = useRef(null);
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs, loading]);
-
-  const done = tasks.filter(t => t.status === 'Done');
-  const open = tasks.filter(t => t.status !== 'Done' && t.status !== 'Archived');
-  const ov = tasks.filter(t => urgency(t) === 'Overdue' && t.status !== 'Done');
-  const ff = tasks.filter(t => t.finishFirst && t.status !== 'Done');
-
-  const sys = `${PROFILE}
-
-You are Tiffany's nightly wind-down companion. Tonight's data:
-- Done today: ${done.length} tasks (${done.slice(0, 3).map(t => t.title).filter(Boolean).join(', ') || 'none recorded'})
-- Still open: ${open.length} tasks
-- Overdue: ${ov.length > 0 ? ov.map(t => t.title).slice(0, 3).join(', ') : 'none'}
-- Finish First queue: ${ff.length > 0 ? ff.map(t => t.title).join(', ') : 'clear'}
-- Wellness: steps=${wellness.steps || 'not logged'}, workout=${wellness.workout ? `done (${wellness.workoutType || ''})` : 'not done'}, sleep quality=${wellness.sleepQuality || 'not logged'}, night eating=${wellness.nightEating ? 'happened last night' : 'no'}, mood=${MOODS[wellness.mood] || 'not logged'}${wellness.spiral ? `\n- On her mind tonight: "${wellness.spiral}"` : ''}
-- Her reflection: Done: "${refs.done}" | Felt heavy: "${refs.heavy}" | Tomorrow first: "${refs.tomorrow}"
-
-Run a real wind-down. Grounded, direct. One focused question at a time. Max 3 sentences per response. Start by acknowledging something real from today — not a compliment, an observation.`;
-
-  const start = async () => {
-    setStarted(true); setLoading(true);
-    try { const r = await callClaude([], sys); setMsgs([{ role: 'assistant', content: r }]); }
-    catch { setMsgs([{ role: 'assistant', content: "Let's close the day. What actually got done today — even the small things count." }]); }
-    setLoading(false);
-  };
-  const send = async () => {
-    if (!input.trim() || loading) return;
-    const um = { role: 'user', content: input.trim() };
-    const next = [...msgs, um]; setMsgs(next); setInput(''); setLoading(true);
-    try { const r = await callClaude(next, sys); setMsgs(p => [...p, { role: 'assistant', content: r }]); }
-    catch { setMsgs(p => [...p, { role: 'assistant', content: 'Go on.' }]); }
-    setLoading(false);
-  };
-
-  if (phase === 'checks') return (
-    <div>
-      <div style={{ marginBottom: 20 }}>
-        <div style={{ fontFamily: 'Libre Baskerville,serif', fontSize: 20, fontWeight: 700, marginBottom: 4 }}>Nightly Wind-Down</div>
-        <div style={{ fontSize: 13, color: 'var(--muted)' }}>5 minutes. Close the day the right way.</div>
-      </div>
-      <div className="card">
-        <div className="card-t">Wrap-Up Checklist</div>
-        {[['done', 'Marked completed tasks as Done'], ['moved', 'Moved unfinished tasks or flagged them'], ['loops', 'Dumped any new open loops'], ['tomorrow', "Set tomorrow's Top 3"]].map(([k, label]) => (
-          <div key={k} className={`ni ${checks[k] ? 'on' : ''}`} onClick={() => setChecks(p => ({ ...p, [k]: !p[k] }))}>
-            <input type="checkbox" checked={!!checks[k]} onChange={() => {}} />
-            <span>{label}</span>
-          </div>
-        ))}
-      </div>
-      <div className="card">
-        <div className="card-t">Quick Reflection</div>
-        <div style={{ marginBottom: 12 }}><label className="lbl">What actually got done today?</label><input placeholder="Even the small things count..." value={refs.done} onChange={e => setRefs(p => ({ ...p, done: e.target.value }))} /></div>
-        <div style={{ marginBottom: 12 }}><label className="lbl">What felt heavier than it needed to?</label><input placeholder="Be honest..." value={refs.heavy} onChange={e => setRefs(p => ({ ...p, heavy: e.target.value }))} /></div>
-        <div style={{ marginBottom: 18 }}><label className="lbl">What is tomorrow's first move?</label><input placeholder="One clear action..." value={refs.tomorrow} onChange={e => setRefs(p => ({ ...p, tomorrow: e.target.value }))} /></div>
-        <button className="btn btn-p" onClick={() => setPhase('chat')} disabled={!refs.done.trim()}>Talk it through with Claude →</button>
-      </div>
-    </div>
-  );
-
-  return (
-    <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-        <div style={{ fontFamily: 'Libre Baskerville,serif', fontSize: 20, fontWeight: 700 }}>Nightly Wind-Down</div>
-        <button className="btn btn-g" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => { setPhase('checks'); setStarted(false); setMsgs([]); }}>← Back</button>
-      </div>
-      {!started ? (
-        <div className="start-c">
-          <div className="start-s">Claude has tonight's full picture — tasks, wellness, your reflection. One real question at a time.</div>
-          <button className="btn btn-p" style={{ fontSize: 15, padding: '11px 28px' }} onClick={start}>Begin Wind-Down</button>
-        </div>
-      ) : (
-        <div className="chat-wrap">
-          <div className="chat-msgs">
-            {msgs.map((m, i) => <div key={i} className={`msg ${m.role === 'user' ? 'u' : 'a'}`}>{m.content}</div>)}
-            {loading && <div className="msg a"><div className="dots"><span>·</span><span>·</span><span>·</span></div></div>}
-            <div ref={bottomRef} />
-          </div>
-          <div className="chat-in">
-            <input placeholder="Your thoughts..." value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()} disabled={loading} autoFocus />
-            <button className="btn btn-p" onClick={send} disabled={loading}>Send</button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────
-// CEO TAB
-// ─────────────────────────────────────────────
-function CEOTab({ tasks }) {
-  const [msgs, setMsgs] = useState([]);
-  const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [started, setStarted] = useState(false);
-  const bottomRef = useRef(null);
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs, loading]);
-
-  const done = tasks.filter(t => t.status === 'Done');
-  const open = tasks.filter(t => t.status !== 'Done' && t.status !== 'Archived');
-  const ff = tasks.filter(t => t.finishFirst && t.status !== 'Done');
-  const ov = tasks.filter(t => urgency(t) === 'Overdue' && t.status !== 'Done');
-
-  const sys = `${PROFILE}
-
-You are running Tiffany's Weekly Mini CEO session. You are her strategic advisor and second brain.
-
-This week's data:
-- Done: ${done.length} tasks
-- Open: ${open.length} (${open.slice(0, 4).map(t => t.title).filter(Boolean).join(', ') || 'none named yet'})
-- Overdue: ${ov.length > 0 ? ov.map(t => t.title).slice(0, 3).join(', ') : 'none'}
-- Finish First queue: ${ff.length > 0 ? ff.map(t => t.title).join(', ') : 'empty'}
-
-Run the session in 4 parts: 1) Content performance — what posted, hook quality, what's dying in drafts 2) Finish First audit — what's open and must close 3) Priorities for next week 4) Energy read — what drained her, what gave energy, one avoided decision
-
-Direct, strategic, personal. Reference her brand (Vixens N Darlings), content series (@tunedinwithtiff), and rules. One question at a time. 2–4 sentences per response.`;
-
-  const start = async () => {
-    setStarted(true); setLoading(true);
-    try { const r = await callClaude([], sys); setMsgs([{ role: 'assistant', content: r }]); }
-    catch { setMsgs([{ role: 'assistant', content: "CEO session. First: what content actually went out this week and how did it land?" }]); }
-    setLoading(false);
-  };
-  const send = async () => {
-    if (!input.trim() || loading) return;
-    const um = { role: 'user', content: input.trim() };
-    const next = [...msgs, um]; setMsgs(next); setInput(''); setLoading(true);
-    try { const r = await callClaude(next, sys); setMsgs(p => [...p, { role: 'assistant', content: r }]); }
-    catch { setMsgs(p => [...p, { role: 'assistant', content: 'Keep going.' }]); }
-    setLoading(false);
-  };
-
-  if (!started) return (
-    <div className="start-c">
-      <div className="start-t">Weekly Mini CEO</div>
-      <div className="start-s">Content performance. Open loops. Next week. Energy read. Claude knows your full profile and this week's data.</div>
-      <button className="btn btn-p" style={{ fontSize: 15, padding: '12px 30px' }} onClick={start}>Begin CEO Session</button>
-    </div>
-  );
-
-  return (
-    <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-        <div style={{ fontFamily: 'Libre Baskerville,serif', fontSize: 20, fontWeight: 700 }}>Weekly Mini CEO</div>
-        <button className="btn btn-g" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => { setStarted(false); setMsgs([]); }}>Reset</button>
-      </div>
-      <div className="chat-wrap">
-        <div className="chat-msgs">
-          {msgs.map((m, i) => <div key={i} className={`msg ${m.role === 'user' ? 'u' : 'a'}`}>{m.content}</div>)}
-          {loading && <div className="msg a"><div className="dots"><span>·</span><span>·</span><span>·</span></div></div>}
-          <div ref={bottomRef} />
-        </div>
-        <div className="chat-in">
-          <input placeholder="Your answer..." value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()} disabled={loading} autoFocus />
-          <button className="btn btn-p" onClick={send} disabled={loading}>Send</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────
-// BRAIN TAB
-// ─────────────────────────────────────────────
-const PROMPTS = [
-  "What should I actually focus on today?",
-  "Help me write a hook for a Mentor Minutes video",
-  "I'm spiraling — help me think through this",
-  "Help me crack the Vixens N Darlings pain point for investors",
-  "Talk me through the Pinky Promise Club idea",
-  "What content am I closest to finishing?",
-  "Help me figure out my next career move after graduation",
-  "I need a 10-minute reset — what should I do?",
+const BUCKETS = [
+  {id:"mentor_minutes",label:"Mentor Minutes",emoji:"🎓",color:T.gold},
+  {id:"practice_preach",label:"Practice > Preach",emoji:"⚡",color:"#D4A060"},
+  {id:"respectfully_no",label:"Respectfully No",emoji:"🛑",color:T.wine},
+  {id:"gym_healing",label:"Healing w/ Food",emoji:"🥗",color:T.green},
+  {id:"gym_workouts",label:"Workout Journey",emoji:"💪",color:"#6A9A72"},
+  {id:"skincare_science",label:"Science of Skin",emoji:"🧪",color:T.blue},
+  {id:"substack",label:"Substack Rewinds",emoji:"📚",color:T.purple},
 ];
 
-function BrainTab({ tasks }) {
-  const [msgs, setMsgs] = useState([]);
-  const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
-  const bottomRef = useRef(null);
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs, loading]);
+const HUBS = [
+  {id:"dashboard",label:"Command Center",icon:"⚡"},
+  {id:"content",label:"Content",icon:"📱"},
+  {id:"brand",label:"Vixens N Darlings",icon:"👗"},
+  {id:"college",label:"College + Future",icon:"🎓"},
+  {id:"science",label:"Science",icon:"🔬"},
+  {id:"ai",label:"AI Lab",icon:"🤖"},
+];
 
-  const open = tasks.filter(t => t.status !== 'Done' && t.status !== 'Archived');
-  const ff = tasks.filter(t => t.finishFirst && t.status !== 'Done');
+const store = {
+  async get(k){try{const r=await window.storage.get(k);return r?JSON.parse(r.value):null}catch{return null}},
+  async set(k,v){try{await window.storage.set(k,JSON.stringify(v))}catch{}},
+};
 
-  const sys = `${PROFILE}
+const SYSTEM = `You are Tiff's creative content partner and personal AI. Here's who Tiff is:
+- College senior at Arizona State, admitted to Thunderbird Global MBA. Law school waitlist. Figuring it out in real time.
+- Building @tunedinwithtiff on TikTok: buckets are Mentor Minutes (career wisdom), Practice>Preach (living what she preaches), Respectfully No (boundaries, for women told to shrink). Best content: unscripted interview tips + articulation videos — real, raw, no script.
+- Also @gym (healing relationship with food, workout journey) and @education (skincare science, substack rewinds).
+- Building Vixens N Darlings: empowerment marketplace — could be clothing, podcast, planners, charms, phone cases, a community forum. Vision still forming.
+- Brand voice: big sister who has their shit together but secretly doesn't. Direct. Warm. Witty. Never preachy.
+- Audience: women told to shrink, shush, calm down. Ambitious, emotional, building something real.
+- The fork in the road (Thunderbird vs law vs brand) IS content. The not-knowing IS content.
+Be her real creative partner. Push back when needed. Give specific, concrete ideas.`;
 
-You are Tiffany's second brain. You have full context on her life, brand, goals, struggles, and rules.
+async function askClaude(msg, history=[], maxTokens=1200){
+  const r = await fetch("/api/claude", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({system:SYSTEM, messages:[...history,{role:"user",content:msg}], max_tokens:maxTokens})
+  });
+  const d = await r.json();
+  return d.content?.[0]?.text || "Something went wrong.";
+}
 
-Current task snapshot: ${open.length} open tasks. Finish First queue: ${ff.length > 0 ? ff.map(t => t.title).join(', ') : 'empty'}.
+// ── UI ATOMS ──────────────────────────────────────────────────────────────────
+function Card({children,style,onClick,accent}){
+  const [h,sH]=useState(false);
+  return <div onClick={onClick} onMouseEnter={()=>sH(true)} onMouseLeave={()=>sH(false)}
+    style={{background:T.card,border:`1px solid ${h&&onClick?T.gold:accent||T.border}`,borderRadius:14,
+      padding:"18px 20px",cursor:onClick?"pointer":"default",transition:"all .2s",...style}}>{children}</div>;
+}
 
-Help her think through anything — decisions, spirals, content strategy, brand positioning, career path, relationships, money, wellness. Be direct, personal, grounded. You know her. No generic advice. When she's spiraling, name what's real and give her a concrete next action.`;
+function Btn({children,onClick,variant="primary",style,disabled,sm}){
+  const v={primary:{bg:T.gold,color:"#0F0D0C"},ghost:{bg:"transparent",color:T.muted,border:`1px solid ${T.border}`},
+    wine:{bg:T.wine,color:T.cream},soft:{bg:T.surface,color:T.mutedLight,border:`1px solid ${T.border}`},
+    danger:{bg:"#5A2020",color:"#FFAAAA"}}[variant];
+  return <button onClick={onClick} disabled={disabled}
+    style={{background:v.bg,color:v.color,border:v.border||"none",borderRadius:8,
+      padding:sm?"4px 10px":"8px 16px",fontSize:sm?11:13,fontFamily:"'DM Sans',sans-serif",
+      fontWeight:500,cursor:disabled?"not-allowed":"pointer",opacity:disabled?.45:1,
+      transition:"all .15s",whiteSpace:"nowrap",...style}}>{children}</button>;
+}
 
-  const send = async (msg) => {
-    const text = msg || input.trim();
-    if (!text || loading) return;
-    const um = { role: 'user', content: text };
-    const next = [...msgs, um]; setMsgs(next); setInput(''); setLoading(true);
-    try { const r = await callClaude(next, sys); setMsgs(p => [...p, { role: 'assistant', content: r }]); }
-    catch { setMsgs(p => [...p, { role: 'assistant', content: 'Something went wrong — try again.' }]); }
+function Inp({value,onChange,placeholder,style,multi,rows=3,onKeyDown}){
+  const base={background:T.surface,border:`1px solid ${T.border}`,borderRadius:9,color:T.cream,
+    fontFamily:"'DM Sans',sans-serif",fontSize:13,padding:"9px 13px",outline:"none",
+    width:"100%",transition:"border-color .15s",lineHeight:1.6,...style};
+  const h={onFocus:e=>e.currentTarget.style.borderColor=T.gold,
+    onBlur:e=>e.currentTarget.style.borderColor=T.border,onKeyDown};
+  return multi?<textarea value={value} onChange={onChange} placeholder={placeholder} rows={rows} style={base} {...h}/>
+    :<input value={value} onChange={onChange} placeholder={placeholder} style={base} {...h}/>;
+}
+
+function Tag({label,color,small}){
+  return <span style={{display:"inline-flex",alignItems:"center",gap:4,background:`${color}22`,color,
+    border:`1px solid ${color}44`,borderRadius:20,padding:small?"2px 8px":"3px 10px",fontSize:small?10:11,fontWeight:500}}>{label}</span>;
+}
+
+function SubNav({items,active,set}){
+  return <div style={{display:"flex",gap:4,marginBottom:22,flexWrap:"wrap"}}>
+    {items.map(i=><button key={i.id} onClick={()=>set(i.id)} style={{
+      background:active===i.id?T.gold:"transparent",color:active===i.id?"#0F0D0C":T.muted,
+      border:`1px solid ${active===i.id?T.gold:T.border}`,borderRadius:7,padding:"5px 13px",fontSize:12,
+      fontFamily:"'Syne',sans-serif",fontWeight:600,cursor:"pointer",transition:"all .15s",letterSpacing:".02em"
+    }}>{i.label}</button>)}
+  </div>;
+}
+
+function BucketPill({id,selected,onClick}){
+  const b=BUCKETS.find(x=>x.id===id)||BUCKETS[0];
+  return <button onClick={onClick} style={{background:selected?`${b.color}22`:"transparent",
+    color:selected?b.color:T.muted,border:`1px solid ${selected?b.color+"66":T.border}`,
+    borderRadius:20,padding:"3px 11px",fontSize:11,fontFamily:"'DM Sans',sans-serif",
+    cursor:"pointer",transition:"all .15s",fontWeight:selected?500:400}}>{b.emoji} {b.label}</button>;
+}
+
+function BucketBar({bucket,set}){
+  return <div style={{display:"flex",gap:5,marginBottom:18,flexWrap:"wrap"}}>
+    {BUCKETS.map(b=><BucketPill key={b.id} id={b.id} selected={bucket===b.id} onClick={()=>set(b.id)}/>)}
+  </div>;
+}
+
+function Heading({children}){
+  return <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:26,color:T.cream,marginBottom:20}}>{children}</div>;
+}
+
+// ── DASHBOARD ─────────────────────────────────────────────────────────────────
+function Dashboard({tasks,toggleTask,openCapture}){
+  const [brief,setBrief]=useState(null);
+  const [loading,setLoading]=useState(false);
+  const today=new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
+
+  useEffect(()=>{store.get("brief").then(b=>{if(b?.date===today)setBrief(b.text)});},[]);
+
+  const gen=async()=>{
+    setLoading(true);
+    const pending=tasks.filter(t=>!t.done).slice(0,5).map(t=>t.title).join(", ")||"nothing queued";
+    try{
+      const txt=await askClaude(`Generate Tiff's morning brief for ${today}. Under 260 words, punchy, big sister energy.
+
+Format exactly:
+☀️ GOOD MORNING, TIFF
+[2 sentences — energizing, acknowledges where she's at]
+
+📋 YOUR FOCUS TODAY
+Open tasks: ${pending}. Give her a prioritized view.
+
+📱 TRENDING CONTENT ANGLES
+• [Career/empowerment angle]
+• [Current event tie-in relevant to her niche]
+• [Something connecting to Vixens N Darlings]
+
+💡 HOOK OF THE DAY
+[One specific hook she could post today + which bucket]
+
+🔥 REMINDER
+[1 line. Her voice. Something she'd actually say.]`,[]);
+      setBrief(txt);
+      store.set("brief",{text:txt,date:today});
+    }catch{setBrief("Couldn't load — try again.");}
     setLoading(false);
   };
 
-  return (
-    <div>
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ fontFamily: 'Libre Baskerville,serif', fontSize: 20, fontWeight: 700, marginBottom: 3 }}>Your Second Brain</div>
-        <div style={{ fontSize: 12, color: 'var(--muted)' }}>Ask anything. Thinks, spirals, decisions, content, brand, career — all of it.</div>
-      </div>
-      {msgs.length === 0 && (
-        <div style={{ marginBottom: 16 }}>
-          <div className="sl" style={{ marginTop: 0 }}>Try asking...</div>
-          {PROMPTS.map((q, i) => <button key={i} className="q-btn" onClick={() => send(q)}>{q}</button>)}
-        </div>
-      )}
-      {msgs.length > 0 && (
-        <div className="chat-wrap" style={{ marginBottom: 10 }}>
-          <div className="chat-msgs">
-            {msgs.map((m, i) => <div key={i} className={`msg ${m.role === 'user' ? 'u' : 'a'}`}>{m.content}</div>)}
-            {loading && <div className="msg a"><div className="dots"><span>·</span><span>·</span><span>·</span></div></div>}
-            <div ref={bottomRef} />
+  const pending=tasks.filter(t=>!t.done);
+  const done=tasks.filter(t=>t.done);
+
+  return <div style={{display:"flex",gap:20}}>
+    <div style={{flex:1,display:"flex",flexDirection:"column",gap:18}}>
+      <Card accent={T.gold+"33"}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
+          <div>
+            <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:26,color:T.cream,lineHeight:1}}>{today}</div>
+            <div style={{fontSize:10,color:T.muted,marginTop:3,fontFamily:"'Syne',sans-serif",letterSpacing:".08em"}}>MORNING BRIEF</div>
           </div>
-          <div className="chat-in">
-            <input placeholder="Ask your second brain anything..." value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()} disabled={loading} autoFocus />
-            <button className="btn btn-p" onClick={() => send()} disabled={loading || !input.trim()}>Send</button>
-          </div>
+          <Btn onClick={gen} disabled={loading}>{loading?"Brewing...":brief?"↺ Refresh":"✨ Generate"}</Btn>
         </div>
-      )}
-      {msgs.length === 0 && (
-        <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-          <input placeholder="Or type your own question..." value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()} disabled={loading} />
-          <button className="btn btn-p" onClick={() => send()} disabled={loading || !input.trim()} style={{ flexShrink: 0 }}>Send</button>
+        {brief?<div style={{fontSize:13,color:T.mutedLight,lineHeight:1.8,whiteSpace:"pre-line"}}>{brief}</div>
+          :<div style={{textAlign:"center",padding:"24px 0",color:T.muted}}>
+            <div style={{fontSize:32,marginBottom:8}}>☀️</div>
+            <div style={{fontSize:13}}>Generate your daily brief — trends, priorities, a hook.</div>
+          </div>}
+      </Card>
+      <Card>
+        <div style={{fontSize:10,color:T.muted,fontFamily:"'Syne',sans-serif",letterSpacing:".1em",marginBottom:12}}>QUICK CAPTURE</div>
+        <div style={{display:"flex",gap:8}}>
+          <Btn onClick={()=>openCapture("task")} style={{flex:1}}>+ Task</Btn>
+          <Btn onClick={()=>openCapture("content")} variant="wine" style={{flex:1}}>+ Content Idea</Btn>
+          <Btn onClick={()=>openCapture("note")} variant="ghost" style={{flex:1}}>+ Note</Btn>
         </div>
-      )}
-      {msgs.length > 0 && <button className="btn btn-g" style={{ fontSize: 12, padding: '4px 10px', marginTop: 8 }} onClick={() => setMsgs([])}>Clear chat</button>}
+      </Card>
     </div>
-  );
+    <div style={{width:300,flexShrink:0}}>
+      <Card style={{height:"100%"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+          <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:20,color:T.cream}}>Today's Focus</div>
+          <span style={{fontSize:11,color:T.muted}}>{pending.length} left</span>
+        </div>
+        {pending.length===0?<div style={{textAlign:"center",padding:"28px 0",color:T.muted,fontSize:13}}>Clear queue — add something or take the win.</div>
+          :<div style={{display:"flex",flexDirection:"column",gap:1}}>
+            {pending.map(t=><div key={t.id} onClick={()=>toggleTask(t.id)}
+              style={{display:"flex",alignItems:"flex-start",gap:9,padding:"9px 6px",borderRadius:7,cursor:"pointer",
+                borderBottom:`1px solid ${T.border}`,transition:"background .1s"}}
+              onMouseEnter={e=>e.currentTarget.style.background=T.surface}
+              onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+              <div style={{width:15,height:15,borderRadius:4,marginTop:2,border:`2px solid ${T.borderLight}`,flexShrink:0}}/>
+              <div style={{flex:1}}>
+                <div style={{fontSize:13,color:T.cream}}>{t.title}</div>
+                {t.hub&&t.hub!=="dashboard"&&<div style={{fontSize:10,color:T.muted,marginTop:2}}>
+                  {HUBS.find(h=>h.id===t.hub)?.icon} {HUBS.find(h=>h.id===t.hub)?.label}</div>}
+              </div>
+            </div>)}
+          </div>}
+        {done.length>0&&<div style={{marginTop:12,fontSize:11,color:T.muted}}>✓ {done.length} done today</div>}
+        <Btn onClick={()=>openCapture("task")} variant="soft" style={{width:"100%",marginTop:14}}>+ Add Task</Btn>
+      </Card>
+    </div>
+  </div>;
 }
 
-// ─────────────────────────────────────────────
-// MAIN APP
-// ─────────────────────────────────────────────
-export default function SecondBrain() {
-  const [tab, setTab] = useState('today');
-  const [tasks, setTasks] = useState(null);
-  const [wellnessLog, setWellnessLog] = useState({});
+// ── CONTENT HUB ───────────────────────────────────────────────────────────────
+function ContentHub(){
+  const [sub,setSub]=useState("iterate");
+  const [bucket,setBucket]=useState("mentor_minutes");
+  const [hooks,setHooks]=useState([]);
+  const [ideas,setIdeas]=useState([]);
+  const [chat,setChat]=useState([]);
+  const [chatIn,setChatIn]=useState("");
+  const [chatLoading,setChatLoading]=useState(false);
+  const [newHook,setNewHook]=useState("");
+  const [newIdea,setNewIdea]=useState({title:"",notes:""});
+  const [working,setWorking]=useState({works:"",doesnt:"",metrics:""});
+  const [scraperIn,setScraperIn]=useState("");
+  const [scraperOut,setScraperOut]=useState("");
+  const [scraperLoading,setScraperLoading]=useState(false);
+  const chatRef=useRef(null);
+  const B=BUCKETS.find(b=>b.id===bucket);
 
-  useEffect(() => {
-    setTasks(load('tff_tasks', []));
-    setWellnessLog(load('tff_wellness', {}));
-  }, []);
+  useEffect(()=>{
+    Promise.all([store.get("hooks"),store.get("c_ideas"),store.get("c_working"),store.get("c_chat")])
+      .then(([h,i,w,c])=>{if(h)setHooks(h);if(i)setIdeas(i);if(w)setWorking(w);if(c)setChat(c)});
+  },[]);
+  useEffect(()=>{store.set("hooks",hooks)},[hooks]);
+  useEffect(()=>{store.set("c_ideas",ideas)},[ideas]);
+  useEffect(()=>{store.set("c_working",working)},[working]);
+  useEffect(()=>{chatRef.current?.scrollIntoView({behavior:"smooth"})},[chat]);
 
-  useEffect(() => { if (tasks !== null) save('tff_tasks', tasks); }, [tasks]);
-  useEffect(() => { save('tff_wellness', wellnessLog); }, [wellnessLog]);
+  const addHook=()=>{if(!newHook.trim())return;setHooks(p=>[{id:Date.now(),text:newHook,bucket,at:new Date().toISOString()},...p]);setNewHook("")};
+  const addIdea=()=>{if(!newIdea.title.trim())return;setIdeas(p=>[{id:Date.now(),...newIdea,bucket,at:new Date().toISOString()},...p]);setNewIdea({title:"",notes:""})};
 
-  const addTask = t => setTasks(p => [t, ...p]);
-  const doneTask = id => setTasks(p => p.map(t => t.id === id ? { ...t, status: t.status === 'Done' ? 'Inbox' : 'Done' } : t));
-  const flagTask = id => setTasks(p => p.map(t => t.id === id ? { ...t, finishFirst: !t.finishFirst } : t));
-  const delTask = id => setTasks(p => p.filter(t => t.id !== id));
+  const sendChat=async()=>{
+    if(!chatIn.trim()||chatLoading)return;
+    const msg=chatIn;setChatIn("");setChatLoading(true);
+    const next=[...chat,{role:"user",content:msg}];setChat(next);
+    try{
+      const res=await askClaude(`Bucket context: ${B?.label}. ${msg}`,chat.slice(-10));
+      const final=[...next,{role:"assistant",content:res}];setChat(final);store.set("c_chat",final);
+    }catch{setChat(p=>[...p,{role:"assistant",content:"Ran into an issue — try again."}])}
+    setChatLoading(false);
+  };
 
-  const todayKey = new Date().toISOString().split('T')[0];
-  const todayWellness = wellnessLog[todayKey] || {};
-  const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  const scrape=async()=>{
+    if(!scraperIn.trim())return;setScraperLoading(true);
+    try{
+      const res=await askClaude(`Extract content ideas from this text for Tiff's specific buckets.
+Give: 1) Core insight, 2) 3 hooks in her voice, 3) Which bucket(s) and why, 4) One specific video angle.
+Source: ${scraperIn}`,[]);
+      setScraperOut(res);
+    }catch{setScraperOut("Couldn't process — try again.")}
+    setScraperLoading(false);
+  };
 
-  const TABS = [
-    { id: 'today', label: 'Today' },
-    { id: 'capture', label: 'Capture' },
-    { id: 'wellness', label: 'Wellness' },
-    { id: 'nightly', label: 'Nightly' },
-    { id: 'ceo', label: 'Mini CEO' },
-    { id: 'brain', label: 'Brain' },
-  ];
+  const SUBS=[{id:"iterate",label:"✨ Iterate w/ AI"},{id:"hooks",label:"🪝 Hooks DB"},
+    {id:"ideas",label:"💡 Ideas Bank"},{id:"working",label:"📊 What's Working"},
+    {id:"extractor",label:"🎬 Extractor"},{id:"dataDoc",label:"📋 Data Doc"}];
 
-  if (tasks === null) return (
-    <>
-      <style>{CSS}</style>
-      <div style={{ textAlign: 'center', padding: 60, color: 'var(--muted)', fontFamily: 'Karla,sans-serif' }}>Loading your second brain...</div>
-    </>
-  );
-
-  return (
-    <>
-      <style>{CSS}</style>
-      <div className="app">
-        <div className="hdr">
-          <div className="hdr-name">Tiffany</div>
-          <div className="hdr-sub" style={{ marginLeft: 4 }}>Second Brain</div>
-          <div className="hdr-date">{today}</div>
+  if(sub==="iterate") return <div style={{display:"flex",flexDirection:"column",height:"calc(100vh - 180px)"}}>
+    <SubNav items={SUBS} active={sub} set={setSub}/>
+    <BucketBar bucket={bucket} set={setBucket}/>
+    <div style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column",gap:8,paddingBottom:4}}>
+      {chat.length===0&&<div style={{textAlign:"center",padding:"32px 0",color:T.muted}}>
+        <div style={{fontSize:34,marginBottom:10}}>✨</div>
+        <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:22,color:T.cream,marginBottom:5}}>Your AI Content Partner</div>
+        <div style={{fontSize:13,marginBottom:18}}>Pitch ideas, get hooks, iterate scripts — I know your brand.</div>
+        <div style={{display:"flex",gap:6,justifyContent:"center",flexWrap:"wrap",maxWidth:580,margin:"0 auto"}}>
+          {["Give me 5 hooks for Mentor Minutes","Help me write a Respectfully No script",
+            "What content can I make about not knowing my future?","Is my brand direction clear? Let's talk.",
+            "Turn this idea into a video: [paste idea]"].map(s=><button key={s} onClick={()=>setChatIn(s)}
+            style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:20,padding:"5px 13px",
+              color:T.muted,fontSize:12,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor=T.gold;e.currentTarget.style.color=T.gold}}
+            onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.color=T.muted}}
+          >{s}</button>)}
         </div>
-        <nav className="nav">
-          {TABS.map(t => (
-            <button key={t.id} className={`nb ${tab === t.id ? 'on' : ''}`} onClick={() => setTab(t.id)}>{t.label}</button>
-          ))}
-        </nav>
-        <div className="body">
-          {tab === 'today' && <TodayTab tasks={tasks} onDone={doneTask} onFlag={flagTask} onDelete={delTask} />}
-          {tab === 'capture' && <CaptureTab onAddTask={addTask} />}
-          {tab === 'wellness' && <WellnessTab today={todayWellness} onSave={w => setWellnessLog(p => ({ ...p, [todayKey]: w }))} log={wellnessLog} />}
-          {tab === 'nightly' && <NightlyTab tasks={tasks} wellness={todayWellness} />}
-          {tab === 'ceo' && <CEOTab tasks={tasks} />}
-          {tab === 'brain' && <BrainTab tasks={tasks} />}
+      </div>}
+      {chat.map((m,i)=><div key={i} style={{display:"flex",justifyContent:m.role==="user"?"flex-end":"flex-start"}}>
+        <div style={{maxWidth:"72%",background:m.role==="user"?T.wine:T.card,
+          border:`1px solid ${m.role==="user"?T.wine+"88":T.border}`,
+          borderRadius:m.role==="user"?"16px 16px 4px 16px":"16px 16px 16px 4px",
+          padding:"11px 15px",fontSize:13,color:T.cream,lineHeight:1.7,whiteSpace:"pre-line"}}>{m.content}</div>
+      </div>)}
+      {chatLoading&&<div style={{display:"flex",gap:5,padding:14,alignItems:"center"}}>
+        <span style={{width:6,height:6,borderRadius:"50%",background:T.gold,display:"inline-block",animation:"pulse 1.4s ease-in-out infinite"}}/>
+        <span style={{width:6,height:6,borderRadius:"50%",background:T.gold,display:"inline-block",animation:"pulse 1.4s ease-in-out .2s infinite"}}/>
+        <span style={{width:6,height:6,borderRadius:"50%",background:T.gold,display:"inline-block",animation:"pulse 1.4s ease-in-out .4s infinite"}}/>
+      </div>}
+      <div ref={chatRef}/>
+    </div>
+    <div style={{display:"flex",gap:8,marginTop:10,alignItems:"flex-end"}}>
+      <Inp value={chatIn} onChange={e=>setChatIn(e.target.value)}
+        placeholder={`Working on ${B?.label}... pitch an idea, ask for hooks, iterate`}
+        multi rows={2} style={{flex:1}}
+        onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendChat()}}}/>
+      <div style={{display:"flex",flexDirection:"column",gap:5}}>
+        <Btn onClick={sendChat} disabled={chatLoading||!chatIn.trim()}>Send</Btn>
+        {chat.length>0&&<Btn onClick={()=>{setChat([]);store.set("c_chat",[])}} variant="ghost" sm>Clear</Btn>}
+      </div>
+    </div>
+  </div>;
+
+  if(sub==="hooks") return <div>
+    <SubNav items={SUBS} active={sub} set={setSub}/>
+    <BucketBar bucket={bucket} set={setBucket}/>
+    <div style={{display:"flex",gap:8,marginBottom:18}}>
+      <Inp value={newHook} onChange={e=>setNewHook(e.target.value)} placeholder={`Hook for ${B?.label}...`} style={{flex:1}} onKeyDown={e=>e.key==="Enter"&&addHook()}/>
+      <Btn onClick={addHook}>Save Hook</Btn>
+    </div>
+    {hooks.filter(h=>h.bucket===bucket).length===0
+      ?<Card style={{textAlign:"center",padding:36}}><div style={{fontSize:28,marginBottom:8}}>🪝</div><div style={{color:T.muted,fontSize:13}}>No hooks saved for {B?.label} yet</div></Card>
+      :<div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {hooks.filter(h=>h.bucket===bucket).map(h=><Card key={h.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:14}}>
+          <div style={{fontSize:14,color:T.cream,flex:1,fontStyle:"italic"}}>"{h.text}"</div>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
+            <span style={{fontSize:10,color:T.muted}}>{new Date(h.at).toLocaleDateString()}</span>
+            <Btn onClick={()=>setHooks(p=>p.filter(x=>x.id!==h.id))} variant="danger" sm>✕</Btn>
+          </div>
+        </Card>)}
+      </div>}
+  </div>;
+
+  if(sub==="ideas") return <div>
+    <SubNav items={SUBS} active={sub} set={setSub}/>
+    <BucketBar bucket={bucket} set={setBucket}/>
+    <Card style={{marginBottom:18}}>
+      <div style={{fontSize:10,color:T.muted,fontFamily:"'Syne',sans-serif",letterSpacing:".08em",marginBottom:10}}>NEW IDEA</div>
+      <Inp value={newIdea.title} onChange={e=>setNewIdea(p=>({...p,title:e.target.value}))} placeholder="Idea title or hook..." style={{marginBottom:7}}/>
+      <Inp value={newIdea.notes} onChange={e=>setNewIdea(p=>({...p,notes:e.target.value}))} placeholder="Notes, angles, rough script..." multi rows={3}/>
+      <div style={{display:"flex",justifyContent:"flex-end",marginTop:9}}><Btn onClick={addIdea}>Save Idea</Btn></div>
+    </Card>
+    <div style={{display:"flex",flexDirection:"column",gap:8}}>
+      {ideas.filter(i=>i.bucket===bucket).map(i=><Card key={i.id}>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
+          <div style={{fontSize:14,color:T.cream,fontWeight:500}}>{i.title}</div>
+          <Btn onClick={()=>setIdeas(p=>p.filter(x=>x.id!==i.id))} variant="danger" sm>✕</Btn>
+        </div>
+        {i.notes&&<div style={{fontSize:12,color:T.muted,lineHeight:1.6}}>{i.notes}</div>}
+        <div style={{marginTop:7}}><Tag label={B?.label} color={B?.color} small/></div>
+      </Card>)}
+      {ideas.filter(i=>i.bucket===bucket).length===0&&<div style={{textAlign:"center",padding:32,color:T.muted,fontSize:13}}>No ideas for {B?.label} yet</div>}
+    </div>
+  </div>;
+
+  if(sub==="working") return <div>
+    <SubNav items={SUBS} active={sub} set={setSub}/>
+    <div style={{display:"flex",gap:18,marginBottom:16}}>
+      <Card style={{flex:1}}>
+        <div style={{fontSize:10,color:T.green,fontFamily:"'Syne',sans-serif",letterSpacing:".08em",marginBottom:9}}>✓ WHAT'S WORKING</div>
+        <Inp value={working.works} onChange={e=>setWorking(p=>({...p,works:e.target.value}))} placeholder="Formats, hooks, topics landing..." multi rows={6}/>
+      </Card>
+      <Card style={{flex:1}}>
+        <div style={{fontSize:10,color:T.wine,fontFamily:"'Syne',sans-serif",letterSpacing:".08em",marginBottom:9}}>✗ WHAT'S NOT</div>
+        <Inp value={working.doesnt} onChange={e=>setWorking(p=>({...p,doesnt:e.target.value}))} placeholder="Honest log. No judgment." multi rows={6}/>
+      </Card>
+    </div>
+    <Card>
+      <div style={{fontSize:10,color:T.muted,fontFamily:"'Syne',sans-serif",letterSpacing:".08em",marginBottom:9}}>📊 METRICS</div>
+      <Inp value={working.metrics} onChange={e=>setWorking(p=>({...p,metrics:e.target.value}))} placeholder="View counts, follower growth, notes..." multi rows={4}/>
+    </Card>
+    <div style={{display:"flex",justifyContent:"flex-end",marginTop:10}}><Btn onClick={()=>store.set("c_working",working)}>Save</Btn></div>
+  </div>;
+
+  if(sub==="extractor") return <div>
+    <SubNav items={SUBS} active={sub} set={setSub}/>
+    <div style={{fontSize:13,color:T.mutedLight,marginBottom:14}}>Paste a transcript, article, or video description — Claude extracts ideas for your exact buckets.</div>
+    <div style={{display:"flex",gap:18}}>
+      <div style={{flex:1}}>
+        <Inp value={scraperIn} onChange={e=>setScraperIn(e.target.value)} placeholder="Paste transcript, article, podcast notes..." multi rows={12}/>
+        <Btn onClick={scrape} disabled={scraperLoading||!scraperIn.trim()} style={{marginTop:9,width:"100%"}}>
+          {scraperLoading?"Extracting...":"🎬 Extract Content Ideas"}
+        </Btn>
+      </div>
+      <div style={{flex:1}}>
+        {scraperOut?<Card style={{whiteSpace:"pre-line",fontSize:13,color:T.mutedLight,lineHeight:1.75,height:"100%"}}>{scraperOut}</Card>
+          :<Card style={{display:"flex",alignItems:"center",justifyContent:"center",padding:48,height:"100%"}}>
+            <div style={{color:T.muted,fontSize:13}}>Ideas will appear here</div></Card>}
+      </div>
+    </div>
+  </div>;
+
+  if(sub==="dataDoc") return <div><SubNav items={SUBS} active={sub} set={setSub}/><DataDoc/></div>;
+  return <div><SubNav items={SUBS} active={sub} set={setSub}/></div>;
+}
+
+function DataDoc(){
+  const [doc,setDoc]=useState({
+    mission:"For women told to shrink — this is the big sister voice they needed.\n\nTiff Lavoie. College senior. Brand builder. Building in public.",
+    voice:"Big sister who has their shit together but secretly doesn't.\nDirect. Warm. Witty. Never preachy.\n\n• \"Respectfully, no.\"\n• \"You were never too much. You were just in the wrong room.\"\n• \"Build in public. Stumble in public. Grow in public.\"",
+    buckets:"🎓 Mentor Minutes — career wisdom, mentorship stories\n⚡ Practice>Preach — living what she preaches\n🛑 Respectfully No — boundaries, self-advocacy\n\n🥗 Healing w/ Food — @gym\n💪 Workout Journey — @gym\n\n🧪 Science of Skin — @education\n📚 Substack Rewinds — @education",
+    confinements:"• Not toxic positivity — keep it real\n• Not LinkedIn-polished — unscripted converts better\n• Not giving advice she hasn't lived\n• Not hiding the uncertainty — it's the story",
+    audience:"Women told to shrink, shush, calm down. Ambitious, emotional, building something.\nNeeds: permission, validation, tactical advice, a mirror.",
+  });
+  useEffect(()=>{store.get("data_doc").then(d=>{if(d)setDoc(d)})},[]);
+  const S=[{key:"mission",label:"🎯 MISSION",rows:4},{key:"audience",label:"👥 AUDIENCE",rows:5},
+    {key:"voice",label:"🎤 BRAND VOICE",rows:8},{key:"buckets",label:"🪣 CONTENT BUCKETS",rows:8},
+    {key:"confinements",label:"🚫 CONFINEMENTS",rows:6}];
+  return <div>
+    <div style={{fontSize:13,color:T.muted,marginBottom:16}}>Your source of truth for all content. Keep it updated.</div>
+    {S.map(s=><Card key={s.key} style={{marginBottom:14}}>
+      <div style={{fontSize:10,color:T.gold,fontFamily:"'Syne',sans-serif",letterSpacing:".1em",marginBottom:9}}>{s.label}</div>
+      <Inp value={doc[s.key]} onChange={e=>setDoc(p=>({...p,[s.key]:e.target.value}))} multi rows={s.rows}/>
+    </Card>)}
+    <div style={{display:"flex",justifyContent:"flex-end"}}><Btn onClick={()=>store.set("data_doc",doc)}>Save</Btn></div>
+  </div>;
+}
+
+// ── BRAND HUB ─────────────────────────────────────────────────────────────────
+function BrandHub(){
+  const [sub,setSub]=useState("clarity");
+  const [docs,setDocs]=useState({
+    clarity:"## Where I'm Stuck\n[Write it out — what's the core confusion?]\n\n## What I Know For Sure\n• Women's empowerment is the through-line\n• The brand should feel like a community\n\n## Possible Directions\n1. Clothing brand first, build community around it\n2. Content/community first, merch is secondary\n3. Platform-first: the forum/space IS the product\n\n## The Question I Need to Answer\n[What's the one decision that would unlock clarity?]",
+    bizPlan:"## Business Overview\n\n## Revenue Streams\n1. \n2. \n3. \n\n## Timeline\n- Now: \n- 6 months: \n- 1 year: ",
+    marketing:"## Channels\n\n## Messaging\n\n## Launch Strategy",
+    strategy:"## Differentiation\n\n## Key Partnerships\n\n## Competitive Landscape",
+    files:"## Important Links & Files\n[Paste drive links, Canva links, etc.]",
+  });
+  const [ai,setAI]=useState({q:"",a:"",loading:false});
+  useEffect(()=>{store.get("brand_docs").then(d=>{if(d)setDocs(d)})},[]);
+  const SUBS=[{id:"clarity",label:"🔍 Brand Clarity"},{id:"bizPlan",label:"📋 Biz Plan"},
+    {id:"marketing",label:"📣 Marketing"},{id:"strategy",label:"♟️ Strategy"},
+    {id:"files",label:"📁 Files"},{id:"aiHelper",label:"✨ AI Helper"}];
+  const ask=async()=>{
+    if(!ai.q.trim())return;setAI(p=>({...p,loading:true}));
+    const res=await askClaude(`Help Tiff with Vixens N Darlings. She's stuck — vision could be clothing, podcast, planners, charms, phone cases, a forum. Give concrete next steps, not vague inspiration. Push back if needed. Question: ${ai.q}`,[]);
+    setAI(p=>({...p,a:res,loading:false}));
+  };
+  if(sub==="aiHelper") return <div>
+    <SubNav items={SUBS} active={sub} set={setSub}/>
+    <Heading>Brand Strategy AI</Heading>
+    <div style={{display:"flex",gap:18}}>
+      <div style={{flex:1}}>
+        <Inp value={ai.q} onChange={e=>setAI(p=>({...p,q:e.target.value}))} placeholder="Ask anything about VnD..." multi rows={8}/>
+        <div style={{display:"flex",justifyContent:"flex-end",marginTop:9}}>
+          <Btn onClick={ask} disabled={ai.loading||!ai.q.trim()}>{ai.loading?"Thinking...":"Ask"}</Btn>
         </div>
       </div>
-    </>
-  );
+      <div style={{flex:1}}>
+        {ai.a?<Card style={{whiteSpace:"pre-line",fontSize:13,color:T.mutedLight,lineHeight:1.75}}>{ai.a}</Card>
+          :<Card style={{display:"flex",alignItems:"center",justifyContent:"center",padding:48}}>
+            <div style={{color:T.muted,fontSize:13,textAlign:"center"}}><div style={{fontSize:30,marginBottom:8}}>👗</div>Strategy, clarity, naming — ask anything.</div></Card>}
+      </div>
+    </div>
+  </div>;
+  return <div>
+    <SubNav items={SUBS} active={sub} set={setSub}/>
+    <Heading>Vixens N Darlings</Heading>
+    <Card>
+      <div style={{fontSize:10,color:T.wine,fontFamily:"'Syne',sans-serif",letterSpacing:".1em",marginBottom:10}}>{SUBS.find(s=>s.id===sub)?.label}</div>
+      <Inp value={docs[sub]||""} onChange={e=>setDocs(p=>({...p,[sub]:e.target.value}))} multi rows={16}/>
+      <div style={{display:"flex",justifyContent:"flex-end",marginTop:10}}><Btn onClick={()=>store.set("brand_docs",docs)}>Save</Btn></div>
+    </Card>
+  </div>;
+}
+
+// ── COLLEGE HUB ───────────────────────────────────────────────────────────────
+function CollegeHub(){
+  const [sub,setSub]=useState("internships");
+  const [lists,setLists]=useState({internships:[],scholarships:[],certs:[]});
+  const [newItem,setNewItem]=useState({title:"",status:"Researching",deadline:""});
+  const [decisions,setDecisions]=useState("## The Fork\n- Thunderbird Global MBA (admitted ✓)\n- Law school (waitlist)\n- Brand / Vixens N Darlings full-time\n\n## What matters most to me:\n\n## Pros/Cons:\n\n## I need to decide by:");
+  useEffect(()=>{
+    Promise.all([store.get("internships"),store.get("scholarships"),store.get("certs"),store.get("decisions")])
+      .then(([i,s,c,d])=>{setLists({internships:i||[],scholarships:s||[],certs:c||[]});if(d)setDecisions(d)});
+  },[]);
+  const SM={internships:["Researching","Applied","Interview","Offer","Rejected"],
+    scholarships:["Researching","Applied","Won","Rejected"],certs:["Planned","In Progress","Completed"]};
+  const SC={Researching:T.muted,Applied:T.blue,Interview:T.gold,Offer:T.green,Won:T.green,Rejected:T.wine,"In Progress":T.gold,Planned:T.muted,Completed:T.green};
+  const SUBS=[{id:"internships",label:"💼 Internships"},{id:"scholarships",label:"💰 Scholarships"},
+    {id:"certs",label:"📜 Certs"},{id:"decisions",label:"🗺️ Post-Grad"}];
+  const add=()=>{
+    if(!newItem.title.trim())return;
+    const item={id:Date.now(),...newItem,at:new Date().toISOString()};
+    const updated={...lists,[sub]:[item,...lists[sub]]};setLists(updated);store.set(sub,updated[sub]);
+    setNewItem({title:"",status:SM[sub][0],deadline:""});
+  };
+  if(sub==="decisions") return <div>
+    <SubNav items={SUBS} active={sub} set={setSub}/>
+    <Heading>Post-Grad Decisions</Heading>
+    <Card><Inp value={decisions} onChange={e=>setDecisions(e.target.value)} multi rows={16}/>
+    <div style={{display:"flex",justifyContent:"flex-end",marginTop:10}}><Btn onClick={()=>store.set("decisions",decisions)}>Save</Btn></div></Card>
+  </div>;
+  const items=lists[sub]||[];
+  return <div>
+    <SubNav items={SUBS} active={sub} set={setSub}/>
+    <Heading>{SUBS.find(s=>s.id===sub)?.label}</Heading>
+    <Card style={{marginBottom:16}}>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+        <Inp value={newItem.title} onChange={e=>setNewItem(p=>({...p,title:e.target.value}))} placeholder="Name..." style={{flex:"1 1 180px"}}/>
+        <select value={newItem.status} onChange={e=>setNewItem(p=>({...p,status:e.target.value}))}
+          style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,color:T.cream,padding:"9px 12px",fontFamily:"'DM Sans',sans-serif",fontSize:13,cursor:"pointer"}}>
+          {(SM[sub]||[]).map(s=><option key={s}>{s}</option>)}
+        </select>
+        <Inp value={newItem.deadline} onChange={e=>setNewItem(p=>({...p,deadline:e.target.value}))} placeholder="Deadline" style={{flex:"1 1 120px"}}/>
+        <Btn onClick={add}>Add</Btn>
+      </div>
+    </Card>
+    {items.map(item=><Card key={item.id} style={{marginBottom:9,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+      <div style={{flex:1}}>
+        <div style={{display:"flex",alignItems:"center",gap:9}}>
+          <div style={{fontSize:14,color:T.cream}}>{item.title}</div>
+          <Tag label={item.status} color={SC[item.status]||T.muted} small/>
+        </div>
+        {item.deadline&&<div style={{fontSize:11,color:T.muted,marginTop:3}}>📅 {item.deadline}</div>}
+      </div>
+      <Btn onClick={()=>{const u={...lists,[sub]:items.filter(x=>x.id!==item.id)};setLists(u);store.set(sub,u[sub])}} variant="danger" sm>✕</Btn>
+    </Card>)}
+    {items.length===0&&<div style={{textAlign:"center",padding:36,color:T.muted,fontSize:13}}>Nothing added yet.</div>}
+  </div>;
+}
+
+// ── SCIENCE HUB ───────────────────────────────────────────────────────────────
+function ScienceHub(){
+  const [sub,setSub]=useState("skincare");
+  const [notes,setNotes]=useState({skincare:"",nutrition:"",health:"",workouts:"",cycle:"",hair:""});
+  const [ai,setAI]=useState({q:"",a:"",loading:false});
+  useEffect(()=>{store.get("sci_notes").then(n=>{if(n)setNotes(n)})},[]);
+  const SUBS=[{id:"skincare",label:"✨ Skincare"},{id:"nutrition",label:"🥗 Nutrition"},
+    {id:"health",label:"💊 Health + Vitamins"},{id:"workouts",label:"💪 Workouts"},
+    {id:"cycle",label:"🌙 Hormones + Cycle"},{id:"hair",label:"💇 Haircare"}];
+  const ask=async()=>{
+    if(!ai.q.trim())return;setAI(p=>({...p,loading:true}));
+    const res=await askClaude(`Tiff asking about ${sub} for personal health + potential education content. Give: 1) Science-backed answer, 2) One content angle for her education account. Question: ${ai.q}`,[]);
+    setAI(p=>({...p,a:res,loading:false}));
+  };
+  return <div>
+    <SubNav items={SUBS} active={sub} set={setSub}/>
+    <div style={{display:"flex",gap:18}}>
+      <div style={{flex:1}}>
+        <Heading>{SUBS.find(s=>s.id===sub)?.label} Notes</Heading>
+        <Card>
+          <Inp value={notes[sub]} onChange={e=>setNotes(p=>({...p,[sub]:e.target.value}))} placeholder={`Notes on ${sub}...`} multi rows={12}/>
+          <div style={{display:"flex",justifyContent:"flex-end",marginTop:9}}><Btn onClick={()=>store.set("sci_notes",notes)}>Save</Btn></div>
+        </Card>
+      </div>
+      <div style={{width:320,flexShrink:0}}>
+        <Heading>🔬 Ask the Science</Heading>
+        <Card>
+          <Inp value={ai.q} onChange={e=>setAI(p=>({...p,q:e.target.value}))} placeholder={`Ask anything about ${sub}...`} multi rows={4}/>
+          <Btn onClick={ask} disabled={ai.loading||!ai.q.trim()} style={{marginTop:9,width:"100%"}}>{ai.loading?"Researching...":"Ask"}</Btn>
+          {ai.a&&<div style={{marginTop:12,fontSize:12,color:T.mutedLight,lineHeight:1.75,whiteSpace:"pre-line"}}>{ai.a}</div>}
+        </Card>
+      </div>
+    </div>
+  </div>;
+}
+
+// ── AI HUB ────────────────────────────────────────────────────────────────────
+function AIHub(){
+  const [sub,setSub]=useState("prompts");
+  const [items,setItems]=useState({prompts:[],ideas:[],workflows:[]});
+  const [newItem,setNewItem]=useState({title:"",content:""});
+  useEffect(()=>{store.get("ai_hub").then(d=>{if(d)setItems(d)})},[]);
+  const SUBS=[{id:"prompts",label:"📝 Prompts"},{id:"ideas",label:"💡 AI Ideas"},{id:"workflows",label:"⚙️ Workflows"}];
+  const add=()=>{
+    if(!newItem.title.trim())return;
+    const item={id:Date.now(),...newItem,at:new Date().toISOString()};
+    const updated={...items,[sub]:[item,...items[sub]]};setItems(updated);store.set("ai_hub",updated);
+    setNewItem({title:"",content:""});
+  };
+  return <div>
+    <SubNav items={SUBS} active={sub} set={setSub}/>
+    <Heading>{SUBS.find(s=>s.id===sub)?.label}</Heading>
+    <Card style={{marginBottom:16}}>
+      <Inp value={newItem.title} onChange={e=>setNewItem(p=>({...p,title:e.target.value}))} placeholder="Name..." style={{marginBottom:7}}/>
+      <Inp value={newItem.content} onChange={e=>setNewItem(p=>({...p,content:e.target.value}))} placeholder="Content, instructions, details..." multi rows={3}/>
+      <div style={{display:"flex",justifyContent:"flex-end",marginTop:9}}><Btn onClick={add}>Save</Btn></div>
+    </Card>
+    {items[sub].map(item=><Card key={item.id} style={{marginBottom:9}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+        <div style={{fontSize:14,color:T.cream,fontWeight:500,marginBottom:5}}>{item.title}</div>
+        <Btn onClick={()=>{const updated={...items,[sub]:items[sub].filter(x=>x.id!==item.id)};setItems(updated);store.set("ai_hub",updated)}} variant="danger" sm>✕</Btn>
+      </div>
+      {item.content&&<div style={{fontSize:12,color:T.muted,lineHeight:1.6}}>{item.content}</div>}
+    </Card>)}
+    {items[sub].length===0&&<div style={{textAlign:"center",padding:36,color:T.muted,fontSize:13}}>Nothing saved yet.</div>}
+  </div>;
+}
+
+// ── CAPTURE MODAL ─────────────────────────────────────────────────────────────
+function CaptureModal({type,onClose,onSave,curHub}){
+  const [text,setText]=useState("");
+  const [bucket,setBucket]=useState("mentor_minutes");
+  const [hub,setHub]=useState(curHub||"dashboard");
+  const save=()=>{if(!text.trim())return;onSave({type,text,bucket,hub});onClose()};
+  return <div onClick={onClose} style={{position:"fixed",inset:0,background:"#000000BB",display:"flex",alignItems:"center",justifyContent:"center",zIndex:999}}>
+    <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:26,width:480,maxWidth:"90vw"}}>
+      <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:22,color:T.cream,marginBottom:16}}>
+        {type==="task"?"New Task":type==="content"?"Content Idea":"Quick Note"}
+      </div>
+      <Inp value={text} onChange={e=>setText(e.target.value)}
+        placeholder={type==="task"?"What needs to get done?":type==="content"?"Hook, idea, script snippet...":"Capture the thought..."}
+        multi rows={3}/>
+      {type==="content"&&<div style={{marginTop:13}}>
+        <div style={{fontSize:10,color:T.muted,fontFamily:"'Syne',sans-serif",letterSpacing:".08em",marginBottom:7}}>BUCKET</div>
+        <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+          {BUCKETS.map(b=><BucketPill key={b.id} id={b.id} selected={bucket===b.id} onClick={()=>setBucket(b.id)}/>)}
+        </div>
+      </div>}
+      {type==="task"&&<div style={{marginTop:13}}>
+        <div style={{fontSize:10,color:T.muted,fontFamily:"'Syne',sans-serif",letterSpacing:".08em",marginBottom:7}}>HUB</div>
+        <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+          {HUBS.map(h=><button key={h.id} onClick={()=>setHub(h.id)} style={{
+            background:hub===h.id?`${T.gold}22`:"transparent",color:hub===h.id?T.gold:T.muted,
+            border:`1px solid ${hub===h.id?T.gold+"66":T.border}`,borderRadius:20,padding:"3px 11px",
+            fontSize:11,fontFamily:"'DM Sans',sans-serif",cursor:"pointer",transition:"all .15s"
+          }}>{h.icon} {h.label}</button>)}
+        </div>
+      </div>}
+      <div style={{display:"flex",gap:8,marginTop:18,justifyContent:"flex-end"}}>
+        <Btn onClick={onClose} variant="ghost">Cancel</Btn>
+        <Btn onClick={save}>Save</Btn>
+      </div>
+    </div>
+  </div>;
+}
+
+// ── ROOT ──────────────────────────────────────────────────────────────────────
+export default function SecondBrain(){
+  const [hub,setHub]=useState("dashboard");
+  const [tasks,setTasks]=useState([]);
+  const [capture,setCapture]=useState(null);
+  const [collapsed,setCollapsed]=useState(false);
+
+  useEffect(()=>{
+    // Inject fonts
+    if(!document.getElementById("brain-fonts")){
+      const link=document.createElement("link");
+      link.id="brain-fonts";
+      link.href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Syne:wght@400;500;600;700&family=DM+Sans:wght@300;400;500&display=swap";
+      link.rel="stylesheet";
+      document.head.appendChild(link);
+    }
+    // Inject base styles
+    if(!document.getElementById("brain-styles")){
+      const style=document.createElement("style");
+      style.id="brain-styles";
+      style.textContent=`
+        *{box-sizing:border-box}
+        body{background:#0F0D0C;margin:0}
+        ::-webkit-scrollbar{width:4px;height:4px}
+        ::-webkit-scrollbar-track{background:#0f0d0c}
+        ::-webkit-scrollbar-thumb{background:#2e2824;border-radius:4px}
+        textarea{resize:vertical}
+        @keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}
+      `;
+      document.head.appendChild(style);
+    }
+    store.get("tasks").then(t=>{if(t)setTasks(t)});
+  },[]);
+
+  const handleSave=({type,text,bucket,hub:th})=>{
+    if(type==="task"){
+      const item={id:Date.now(),title:text,hub:th,done:false,at:new Date().toISOString()};
+      const u=[item,...tasks];setTasks(u);store.set("tasks",u);
+    } else if(type==="content"){
+      const item={id:Date.now(),title:text,bucket,at:new Date().toISOString()};
+      store.get("c_ideas").then(e=>store.set("c_ideas",[item,...(e||[])]));
+    }
+  };
+
+  const toggleTask=id=>{const u=tasks.map(t=>t.id===id?{...t,done:!t.done}:t);setTasks(u);store.set("tasks",u)};
+  const pending=tasks.filter(t=>!t.done).length;
+
+  return <div style={{display:"flex",height:"100vh",background:T.bg,color:T.cream,fontFamily:"'DM Sans',sans-serif",overflow:"hidden"}}>
+    {/* SIDEBAR */}
+    <div style={{width:collapsed?58:210,background:T.surface,borderRight:`1px solid ${T.border}`,
+      padding:collapsed?"24px 8px":"24px 12px",display:"flex",flexDirection:"column",
+      transition:"width .22s ease",flexShrink:0,overflow:"hidden"}}>
+      <div style={{marginBottom:24,display:"flex",alignItems:"center",justifyContent:collapsed?"center":"space-between",paddingLeft:collapsed?0:3}}>
+        {!collapsed&&<div>
+          <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:17,color:T.gold,letterSpacing:".02em"}}>Tiff's Brain</div>
+          <div style={{fontSize:9,color:T.muted,marginTop:2,fontFamily:"'Syne',sans-serif",letterSpacing:".1em"}}>SECOND BRAIN v2</div>
+        </div>}
+        <button onClick={()=>setCollapsed(p=>!p)} style={{background:"transparent",border:"none",color:T.muted,cursor:"pointer",fontSize:14,padding:3,flexShrink:0}}>
+          {collapsed?"→":"←"}
+        </button>
+      </div>
+      {HUBS.map(h=><button key={h.id} onClick={()=>setHub(h.id)} style={{
+        display:"flex",alignItems:"center",gap:collapsed?0:9,justifyContent:collapsed?"center":"flex-start",
+        padding:collapsed?"9px 0":"8px 9px",borderRadius:8,marginBottom:2,width:"100%",
+        background:hub===h.id?`${T.gold}18`:"transparent",
+        border:hub===h.id?`1px solid ${T.gold}33`:"1px solid transparent",
+        color:hub===h.id?T.gold:T.muted,fontSize:13,fontFamily:"'DM Sans',sans-serif",
+        fontWeight:hub===h.id?500:400,cursor:"pointer",textAlign:"left",transition:"all .15s",
+        overflow:"hidden",whiteSpace:"nowrap"
+      }}><span style={{fontSize:15,flexShrink:0}}>{h.icon}</span>{!collapsed&&h.label}</button>)}
+      {!collapsed&&<div style={{marginTop:"auto",paddingTop:14,borderTop:`1px solid ${T.border}`}}>
+        <button onClick={()=>setCapture("task")} style={{width:"100%",background:`${T.gold}15`,
+          border:`1px solid ${T.gold}33`,borderRadius:8,padding:"7px 9px",color:T.gold,fontSize:12,
+          fontFamily:"'DM Sans',sans-serif",cursor:"pointer",marginBottom:5}}>+ Quick Capture</button>
+        <div style={{fontSize:11,color:T.muted,paddingLeft:3}}>{pending} task{pending!==1?"s":""} pending</div>
+      </div>}
+    </div>
+
+    {/* MAIN */}
+    <div style={{flex:1,overflow:"auto",padding:"28px 30px"}}>
+      <div style={{maxWidth:1100,margin:"0 auto"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:24}}>
+          <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:32,color:T.cream,lineHeight:1}}>
+            {HUBS.find(h=>h.id===hub)?.icon} {HUBS.find(h=>h.id===hub)?.label}
+          </div>
+          <div style={{display:"flex",gap:7}}>
+            <Btn onClick={()=>setCapture("content")} variant="wine" sm>+ Content Idea</Btn>
+            <Btn onClick={()=>setCapture("task")} variant="soft" sm>+ Task</Btn>
+          </div>
+        </div>
+        {hub==="dashboard"&&<Dashboard tasks={tasks} toggleTask={toggleTask} openCapture={setCapture}/>}
+        {hub==="content"&&<ContentHub/>}
+        {hub==="brand"&&<BrandHub/>}
+        {hub==="college"&&<CollegeHub/>}
+        {hub==="science"&&<ScienceHub/>}
+        {hub==="ai"&&<AIHub/>}
+      </div>
+    </div>
+
+    {capture&&<CaptureModal type={capture==="note"?"note":capture} onClose={()=>setCapture(null)} onSave={handleSave} curHub={hub}/>}
+  </div>;
 }
