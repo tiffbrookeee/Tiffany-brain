@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 
 const T = {
   bg:"#0F0D0C", surface:"#161210", card:"#1C1815", border:"#272220",
@@ -27,11 +27,16 @@ const HUBS = [
   {id:"ai",label:"AI Lab",icon:"🤖"},
 ];
 
+const AREAS = ["YPO","Brand","School","Personal","Café","Insurance"];
+const PRIORITIES = ["High","Medium","Low"];
+
+// ── STORAGE ──────────────────────────────────────────────────────────────────
 const store = {
   async get(k){try{const r=await window.storage.get(k);return r?JSON.parse(r.value):null}catch{return null}},
   async set(k,v){try{await window.storage.set(k,JSON.stringify(v))}catch{}},
 };
 
+// ── CLAUDE API ───────────────────────────────────────────────────────────────
 const SYSTEM = `You are Tiff's creative content partner and personal AI. Here's who Tiff is:
 - College senior at Arizona State, admitted to Thunderbird Global MBA. Law school waitlist. Figuring it out in real time.
 - Building @tunedinwithtiff on TikTok: buckets are Mentor Minutes (career wisdom), Practice>Preach (living what she preaches), Respectfully No (boundaries, for women told to shrink). Best content: unscripted interview tips + articulation videos — real, raw, no script.
@@ -44,12 +49,41 @@ Be her real creative partner. Push back when needed. Give specific, concrete ide
 
 async function askClaude(msg, history=[], maxTokens=1200){
   const r = await fetch("/api/claude", {
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
+    method:"POST", headers:{"Content-Type":"application/json"},
     body:JSON.stringify({system:SYSTEM, messages:[...history,{role:"user",content:msg}], max_tokens:maxTokens})
   });
   const d = await r.json();
   return d.content?.[0]?.text || "Something went wrong.";
+}
+
+// ── NOTION SYNC ───────────────────────────────────────────────────────────────
+async function fetchNotionTasks() {
+  try {
+    const r = await fetch("/api/notion");
+    if (!r.ok) return null;
+    const d = await r.json();
+    return d.tasks || [];
+  } catch { return null; }
+}
+
+async function createNotionTask(title, priority="Medium", area=null, due=null) {
+  try {
+    const r = await fetch("/api/notion", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({title, priority, area, due})
+    });
+    const d = await r.json();
+    return d.task || null;
+  } catch { return null; }
+}
+
+async function updateNotionTask(taskId, status) {
+  try {
+    await fetch("/api/notion", {
+      method:"PATCH", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({taskId, status})
+    });
+  } catch {}
 }
 
 // ── UI ATOMS ──────────────────────────────────────────────────────────────────
@@ -63,7 +97,7 @@ function Card({children,style,onClick,accent}){
 function Btn({children,onClick,variant="primary",style,disabled,sm}){
   const v={primary:{bg:T.gold,color:"#0F0D0C"},ghost:{bg:"transparent",color:T.muted,border:`1px solid ${T.border}`},
     wine:{bg:T.wine,color:T.cream},soft:{bg:T.surface,color:T.mutedLight,border:`1px solid ${T.border}`},
-    danger:{bg:"#5A2020",color:"#FFAAAA"}}[variant];
+    danger:{bg:"#5A2020",color:"#FFAAAA"},notion:{bg:"#2D2D2D",color:"#FFFFFF",border:`1px solid #444`}}[variant];
   return <button onClick={onClick} disabled={disabled}
     style={{background:v.bg,color:v.color,border:v.border||"none",borderRadius:8,
       padding:sm?"4px 10px":"8px 16px",fontSize:sm?11:13,fontFamily:"'DM Sans',sans-serif",
@@ -114,8 +148,24 @@ function Heading({children}){
   return <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:26,color:T.cream,marginBottom:20}}>{children}</div>;
 }
 
+const PRIORITY_COLORS = {High:T.wine, Medium:T.gold, Low:T.muted};
+const AREA_COLORS = {YPO:T.blue, Brand:T.wine, School:T.purple, Personal:T.green, Café:"#A0734A", Insurance:T.muted};
+
+// ── SYNC STATUS PILL ─────────────────────────────────────────────────────────
+function SyncPill({syncing, lastSync, error, onSync}){
+  return <button onClick={onSync} disabled={syncing} style={{
+    display:"flex",alignItems:"center",gap:6,background:"transparent",
+    border:`1px solid ${error?T.wine:T.border}`,borderRadius:20,padding:"4px 12px",
+    color:error?T.wine:syncing?T.gold:T.muted,fontSize:11,cursor:syncing?"default":"pointer",
+    fontFamily:"'DM Sans',sans-serif",transition:"all .2s"
+  }}>
+    <span style={{fontSize:10}}>{syncing?"⟳":error?"⚠":lastSync?"✓":"○"}</span>
+    <span>{syncing?"Syncing...":error?"Sync error":lastSync?`Synced ${lastSync}`:"Sync Notion"}</span>
+  </button>;
+}
+
 // ── DASHBOARD ─────────────────────────────────────────────────────────────────
-function Dashboard({tasks,toggleTask,openCapture}){
+function Dashboard({tasks, toggleTask, openCapture, syncing, lastSync, syncError, onSync}){
   const [brief,setBrief]=useState(null);
   const [loading,setLoading]=useState(false);
   const today=new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
@@ -124,7 +174,7 @@ function Dashboard({tasks,toggleTask,openCapture}){
 
   const gen=async()=>{
     setLoading(true);
-    const pending=tasks.filter(t=>!t.done).slice(0,5).map(t=>t.title).join(", ")||"nothing queued";
+    const pending=tasks.filter(t=>!t.done).slice(0,6).map(t=>`${t.title}${t.area?` [${t.area}]`:""}`).join(", ")||"nothing queued";
     try{
       const txt=await askClaude(`Generate Tiff's morning brief for ${today}. Under 260 words, punchy, big sister energy.
 
@@ -145,14 +195,15 @@ Open tasks: ${pending}. Give her a prioritized view.
 
 🔥 REMINDER
 [1 line. Her voice. Something she'd actually say.]`,[]);
-      setBrief(txt);
-      store.set("brief",{text:txt,date:today});
+      setBrief(txt);store.set("brief",{text:txt,date:today});
     }catch{setBrief("Couldn't load — try again.");}
     setLoading(false);
   };
 
   const pending=tasks.filter(t=>!t.done);
   const done=tasks.filter(t=>t.done);
+  const highPriority=pending.filter(t=>t.priority==="High");
+  const rest=pending.filter(t=>t.priority!=="High");
 
   return <div style={{display:"flex",gap:20}}>
     <div style={{flex:1,display:"flex",flexDirection:"column",gap:18}}>
@@ -179,30 +230,50 @@ Open tasks: ${pending}. Give her a prioritized view.
         </div>
       </Card>
     </div>
-    <div style={{width:300,flexShrink:0}}>
+
+    {/* TASKS PANEL */}
+    <div style={{width:320,flexShrink:0}}>
       <Card style={{height:"100%"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
           <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:20,color:T.cream}}>Today's Focus</div>
-          <span style={{fontSize:11,color:T.muted}}>{pending.length} left</span>
+          <span style={{fontSize:11,color:T.muted}}>{pending.length} open</span>
         </div>
-        {pending.length===0?<div style={{textAlign:"center",padding:"28px 0",color:T.muted,fontSize:13}}>Clear queue — add something or take the win.</div>
-          :<div style={{display:"flex",flexDirection:"column",gap:1}}>
-            {pending.map(t=><div key={t.id} onClick={()=>toggleTask(t.id)}
-              style={{display:"flex",alignItems:"flex-start",gap:9,padding:"9px 6px",borderRadius:7,cursor:"pointer",
-                borderBottom:`1px solid ${T.border}`,transition:"background .1s"}}
-              onMouseEnter={e=>e.currentTarget.style.background=T.surface}
-              onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-              <div style={{width:15,height:15,borderRadius:4,marginTop:2,border:`2px solid ${T.borderLight}`,flexShrink:0}}/>
-              <div style={{flex:1}}>
-                <div style={{fontSize:13,color:T.cream}}>{t.title}</div>
-                {t.hub&&t.hub!=="dashboard"&&<div style={{fontSize:10,color:T.muted,marginTop:2}}>
-                  {HUBS.find(h=>h.id===t.hub)?.icon} {HUBS.find(h=>h.id===t.hub)?.label}</div>}
-              </div>
-            </div>)}
+        <div style={{marginBottom:14}}>
+          <SyncPill syncing={syncing} lastSync={lastSync} error={syncError} onSync={onSync}/>
+        </div>
+
+        {pending.length===0
+          ?<div style={{textAlign:"center",padding:"24px 0",color:T.muted,fontSize:13}}>Clear queue — add something or take the win.</div>
+          :<div style={{display:"flex",flexDirection:"column",gap:1,maxHeight:420,overflowY:"auto"}}>
+            {highPriority.length>0&&<div style={{fontSize:9,color:T.wine,fontFamily:"'Syne',sans-serif",letterSpacing:".1em",padding:"6px 6px 2px"}}>🔴 HIGH PRIORITY</div>}
+            {highPriority.map(t=><TaskRow key={t.id} task={t} onToggle={()=>toggleTask(t.id)}/>)}
+            {rest.length>0&&highPriority.length>0&&<div style={{fontSize:9,color:T.muted,fontFamily:"'Syne',sans-serif",letterSpacing:".1em",padding:"8px 6px 2px"}}>OTHER</div>}
+            {rest.map(t=><TaskRow key={t.id} task={t} onToggle={()=>toggleTask(t.id)}/>)}
           </div>}
-        {done.length>0&&<div style={{marginTop:12,fontSize:11,color:T.muted}}>✓ {done.length} done today</div>}
+
+        {done.length>0&&<div style={{marginTop:12,fontSize:11,color:T.green}}>✓ {done.length} done today</div>}
         <Btn onClick={()=>openCapture("task")} variant="soft" style={{width:"100%",marginTop:14}}>+ Add Task</Btn>
       </Card>
+    </div>
+  </div>;
+}
+
+function TaskRow({task, onToggle}){
+  const [hov,sH]=useState(false);
+  return <div onClick={onToggle}
+    style={{display:"flex",alignItems:"flex-start",gap:9,padding:"9px 6px",borderRadius:7,cursor:"pointer",
+      borderBottom:`1px solid ${T.border}`,background:hov?T.surface:"transparent",transition:"background .1s"}}
+    onMouseEnter={()=>sH(true)} onMouseLeave={()=>sH(false)}>
+    <div style={{width:15,height:15,borderRadius:4,marginTop:2,
+      border:`2px solid ${task.done?T.green:T.borderLight}`,
+      background:task.done?T.green:"transparent",flexShrink:0,transition:"all .15s"}}/>
+    <div style={{flex:1,minWidth:0}}>
+      <div style={{fontSize:13,color:task.done?T.muted:T.cream,textDecoration:task.done?"line-through":"none",
+        overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{task.title}</div>
+      <div style={{display:"flex",gap:5,marginTop:3,flexWrap:"wrap"}}>
+        {task.area&&<Tag label={task.area} color={AREA_COLORS[task.area]||T.muted} small/>}
+        {task.due&&<span style={{fontSize:10,color:T.muted}}>📅 {new Date(task.due+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"})}</span>}
+      </div>
     </div>
   </div>;
 }
@@ -253,8 +324,7 @@ function ContentHub(){
     try{
       const res=await askClaude(`Extract content ideas from this text for Tiff's specific buckets.
 Give: 1) Core insight, 2) 3 hooks in her voice, 3) Which bucket(s) and why, 4) One specific video angle.
-Source: ${scraperIn}`,[]);
-      setScraperOut(res);
+Source: ${scraperIn}`,[]);setScraperOut(res);
     }catch{setScraperOut("Couldn't process — try again.")}
     setScraperLoading(false);
   };
@@ -289,17 +359,13 @@ Source: ${scraperIn}`,[]);
           padding:"11px 15px",fontSize:13,color:T.cream,lineHeight:1.7,whiteSpace:"pre-line"}}>{m.content}</div>
       </div>)}
       {chatLoading&&<div style={{display:"flex",gap:5,padding:14,alignItems:"center"}}>
-        <span style={{width:6,height:6,borderRadius:"50%",background:T.gold,display:"inline-block",animation:"pulse 1.4s ease-in-out infinite"}}/>
-        <span style={{width:6,height:6,borderRadius:"50%",background:T.gold,display:"inline-block",animation:"pulse 1.4s ease-in-out .2s infinite"}}/>
-        <span style={{width:6,height:6,borderRadius:"50%",background:T.gold,display:"inline-block",animation:"pulse 1.4s ease-in-out .4s infinite"}}/>
+        {[0,.2,.4].map(d=><span key={d} style={{width:6,height:6,borderRadius:"50%",background:T.gold,display:"inline-block",animation:`pulse 1.4s ease-in-out ${d}s infinite`}}/>)}
       </div>}
       <div ref={chatRef}/>
     </div>
     <div style={{display:"flex",gap:8,marginTop:10,alignItems:"flex-end"}}>
-      <Inp value={chatIn} onChange={e=>setChatIn(e.target.value)}
-        placeholder={`Working on ${B?.label}... pitch an idea, ask for hooks, iterate`}
-        multi rows={2} style={{flex:1}}
-        onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendChat()}}}/>
+      <Inp value={chatIn} onChange={e=>setChatIn(e.target.value)} placeholder={`Working on ${B?.label}... pitch an idea, ask for hooks`}
+        multi rows={2} style={{flex:1}} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendChat()}}}/>
       <div style={{display:"flex",flexDirection:"column",gap:5}}>
         <Btn onClick={sendChat} disabled={chatLoading||!chatIn.trim()}>Send</Btn>
         {chat.length>0&&<Btn onClick={()=>{setChat([]);store.set("c_chat",[])}} variant="ghost" sm>Clear</Btn>}
@@ -308,14 +374,13 @@ Source: ${scraperIn}`,[]);
   </div>;
 
   if(sub==="hooks") return <div>
-    <SubNav items={SUBS} active={sub} set={setSub}/>
-    <BucketBar bucket={bucket} set={setBucket}/>
+    <SubNav items={SUBS} active={sub} set={setSub}/><BucketBar bucket={bucket} set={setBucket}/>
     <div style={{display:"flex",gap:8,marginBottom:18}}>
       <Inp value={newHook} onChange={e=>setNewHook(e.target.value)} placeholder={`Hook for ${B?.label}...`} style={{flex:1}} onKeyDown={e=>e.key==="Enter"&&addHook()}/>
       <Btn onClick={addHook}>Save Hook</Btn>
     </div>
     {hooks.filter(h=>h.bucket===bucket).length===0
-      ?<Card style={{textAlign:"center",padding:36}}><div style={{fontSize:28,marginBottom:8}}>🪝</div><div style={{color:T.muted,fontSize:13}}>No hooks saved for {B?.label} yet</div></Card>
+      ?<Card style={{textAlign:"center",padding:36}}><div style={{fontSize:28,marginBottom:8}}>🪝</div><div style={{color:T.muted,fontSize:13}}>No hooks for {B?.label} yet</div></Card>
       :<div style={{display:"flex",flexDirection:"column",gap:8}}>
         {hooks.filter(h=>h.bucket===bucket).map(h=><Card key={h.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:14}}>
           <div style={{fontSize:14,color:T.cream,flex:1,fontStyle:"italic"}}>"{h.text}"</div>
@@ -328,8 +393,7 @@ Source: ${scraperIn}`,[]);
   </div>;
 
   if(sub==="ideas") return <div>
-    <SubNav items={SUBS} active={sub} set={setSub}/>
-    <BucketBar bucket={bucket} set={setBucket}/>
+    <SubNav items={SUBS} active={sub} set={setSub}/><BucketBar bucket={bucket} set={setBucket}/>
     <Card style={{marginBottom:18}}>
       <div style={{fontSize:10,color:T.muted,fontFamily:"'Syne',sans-serif",letterSpacing:".08em",marginBottom:10}}>NEW IDEA</div>
       <Inp value={newIdea.title} onChange={e=>setNewIdea(p=>({...p,title:e.target.value}))} placeholder="Idea title or hook..." style={{marginBottom:7}}/>
@@ -394,18 +458,18 @@ function DataDoc(){
   const [doc,setDoc]=useState({
     mission:"For women told to shrink — this is the big sister voice they needed.\n\nTiff Lavoie. College senior. Brand builder. Building in public.",
     voice:"Big sister who has their shit together but secretly doesn't.\nDirect. Warm. Witty. Never preachy.\n\n• \"Respectfully, no.\"\n• \"You were never too much. You were just in the wrong room.\"\n• \"Build in public. Stumble in public. Grow in public.\"",
-    buckets:"🎓 Mentor Minutes — career wisdom, mentorship stories\n⚡ Practice>Preach — living what she preaches\n🛑 Respectfully No — boundaries, self-advocacy\n\n🥗 Healing w/ Food — @gym\n💪 Workout Journey — @gym\n\n🧪 Science of Skin — @education\n📚 Substack Rewinds — @education",
-    confinements:"• Not toxic positivity — keep it real\n• Not LinkedIn-polished — unscripted converts better\n• Not giving advice she hasn't lived\n• Not hiding the uncertainty — it's the story",
-    audience:"Women told to shrink, shush, calm down. Ambitious, emotional, building something.\nNeeds: permission, validation, tactical advice, a mirror.",
+    buckets:"🎓 Mentor Minutes — career wisdom\n⚡ Practice>Preach — living what she preaches\n🛑 Respectfully No — boundaries, self-advocacy\n\n🥗 Healing w/ Food — @gym\n💪 Workout Journey — @gym\n\n🧪 Science of Skin — @education\n📚 Substack Rewinds — @education",
+    confinements:"• Not toxic positivity\n• Not LinkedIn-polished — unscripted converts better\n• Not giving advice she hasn't lived\n• Not hiding the uncertainty — it's the story",
+    audience:"Women told to shrink, shush, calm down.\nNeeds: permission, validation, tactical advice, a mirror.",
   });
   useEffect(()=>{store.get("data_doc").then(d=>{if(d)setDoc(d)})},[]);
-  const S=[{key:"mission",label:"🎯 MISSION",rows:4},{key:"audience",label:"👥 AUDIENCE",rows:5},
-    {key:"voice",label:"🎤 BRAND VOICE",rows:8},{key:"buckets",label:"🪣 CONTENT BUCKETS",rows:8},
-    {key:"confinements",label:"🚫 CONFINEMENTS",rows:6}];
+  const S=[{key:"mission",label:"🎯 MISSION",rows:4},{key:"audience",label:"👥 AUDIENCE",rows:4},
+    {key:"voice",label:"🎤 BRAND VOICE",rows:8},{key:"buckets",label:"🪣 BUCKETS",rows:8},
+    {key:"confinements",label:"🚫 CONFINEMENTS",rows:5}];
   return <div>
-    <div style={{fontSize:13,color:T.muted,marginBottom:16}}>Your source of truth for all content. Keep it updated.</div>
-    {S.map(s=><Card key={s.key} style={{marginBottom:14}}>
-      <div style={{fontSize:10,color:T.gold,fontFamily:"'Syne',sans-serif",letterSpacing:".1em",marginBottom:9}}>{s.label}</div>
+    <div style={{fontSize:13,color:T.muted,marginBottom:14}}>Your source of truth for all content.</div>
+    {S.map(s=><Card key={s.key} style={{marginBottom:12}}>
+      <div style={{fontSize:10,color:T.gold,fontFamily:"'Syne',sans-serif",letterSpacing:".1em",marginBottom:8}}>{s.label}</div>
       <Inp value={doc[s.key]} onChange={e=>setDoc(p=>({...p,[s.key]:e.target.value}))} multi rows={s.rows}/>
     </Card>)}
     <div style={{display:"flex",justifyContent:"flex-end"}}><Btn onClick={()=>store.set("data_doc",doc)}>Save</Btn></div>
@@ -416,11 +480,11 @@ function DataDoc(){
 function BrandHub(){
   const [sub,setSub]=useState("clarity");
   const [docs,setDocs]=useState({
-    clarity:"## Where I'm Stuck\n[Write it out — what's the core confusion?]\n\n## What I Know For Sure\n• Women's empowerment is the through-line\n• The brand should feel like a community\n\n## Possible Directions\n1. Clothing brand first, build community around it\n2. Content/community first, merch is secondary\n3. Platform-first: the forum/space IS the product\n\n## The Question I Need to Answer\n[What's the one decision that would unlock clarity?]",
+    clarity:"## Where I'm Stuck\n\n## What I Know For Sure\n• Women's empowerment is the through-line\n\n## Possible Directions\n1. Clothing brand first\n2. Community/content first\n3. Platform-first: the forum IS the product\n\n## The Question I Need to Answer",
     bizPlan:"## Business Overview\n\n## Revenue Streams\n1. \n2. \n3. \n\n## Timeline\n- Now: \n- 6 months: \n- 1 year: ",
     marketing:"## Channels\n\n## Messaging\n\n## Launch Strategy",
     strategy:"## Differentiation\n\n## Key Partnerships\n\n## Competitive Landscape",
-    files:"## Important Links & Files\n[Paste drive links, Canva links, etc.]",
+    files:"## Important Links & Files",
   });
   const [ai,setAI]=useState({q:"",a:"",loading:false});
   useEffect(()=>{store.get("brand_docs").then(d=>{if(d)setDocs(d)})},[]);
@@ -429,12 +493,11 @@ function BrandHub(){
     {id:"files",label:"📁 Files"},{id:"aiHelper",label:"✨ AI Helper"}];
   const ask=async()=>{
     if(!ai.q.trim())return;setAI(p=>({...p,loading:true}));
-    const res=await askClaude(`Help Tiff with Vixens N Darlings. She's stuck — vision could be clothing, podcast, planners, charms, phone cases, a forum. Give concrete next steps, not vague inspiration. Push back if needed. Question: ${ai.q}`,[]);
+    const res=await askClaude(`Help Tiff with Vixens N Darlings. Stuck — vision could be clothing, podcast, planners, charms, phone cases, a forum. Concrete next steps, not vague inspiration. Push back if needed. Question: ${ai.q}`,[]);
     setAI(p=>({...p,a:res,loading:false}));
   };
   if(sub==="aiHelper") return <div>
-    <SubNav items={SUBS} active={sub} set={setSub}/>
-    <Heading>Brand Strategy AI</Heading>
+    <SubNav items={SUBS} active={sub} set={setSub}/><Heading>Brand Strategy AI</Heading>
     <div style={{display:"flex",gap:18}}>
       <div style={{flex:1}}>
         <Inp value={ai.q} onChange={e=>setAI(p=>({...p,q:e.target.value}))} placeholder="Ask anything about VnD..." multi rows={8}/>
@@ -450,8 +513,7 @@ function BrandHub(){
     </div>
   </div>;
   return <div>
-    <SubNav items={SUBS} active={sub} set={setSub}/>
-    <Heading>Vixens N Darlings</Heading>
+    <SubNav items={SUBS} active={sub} set={setSub}/><Heading>Vixens N Darlings</Heading>
     <Card>
       <div style={{fontSize:10,color:T.wine,fontFamily:"'Syne',sans-serif",letterSpacing:".1em",marginBottom:10}}>{SUBS.find(s=>s.id===sub)?.label}</div>
       <Inp value={docs[sub]||""} onChange={e=>setDocs(p=>({...p,[sub]:e.target.value}))} multi rows={16}/>
@@ -482,15 +544,13 @@ function CollegeHub(){
     setNewItem({title:"",status:SM[sub][0],deadline:""});
   };
   if(sub==="decisions") return <div>
-    <SubNav items={SUBS} active={sub} set={setSub}/>
-    <Heading>Post-Grad Decisions</Heading>
+    <SubNav items={SUBS} active={sub} set={setSub}/><Heading>Post-Grad Decisions</Heading>
     <Card><Inp value={decisions} onChange={e=>setDecisions(e.target.value)} multi rows={16}/>
     <div style={{display:"flex",justifyContent:"flex-end",marginTop:10}}><Btn onClick={()=>store.set("decisions",decisions)}>Save</Btn></div></Card>
   </div>;
   const items=lists[sub]||[];
   return <div>
-    <SubNav items={SUBS} active={sub} set={setSub}/>
-    <Heading>{SUBS.find(s=>s.id===sub)?.label}</Heading>
+    <SubNav items={SUBS} active={sub} set={setSub}/><Heading>{SUBS.find(s=>s.id===sub)?.label}</Heading>
     <Card style={{marginBottom:16}}>
       <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
         <Inp value={newItem.title} onChange={e=>setNewItem(p=>({...p,title:e.target.value}))} placeholder="Name..." style={{flex:"1 1 180px"}}/>
@@ -527,7 +587,7 @@ function ScienceHub(){
     {id:"cycle",label:"🌙 Hormones + Cycle"},{id:"hair",label:"💇 Haircare"}];
   const ask=async()=>{
     if(!ai.q.trim())return;setAI(p=>({...p,loading:true}));
-    const res=await askClaude(`Tiff asking about ${sub} for personal health + potential education content. Give: 1) Science-backed answer, 2) One content angle for her education account. Question: ${ai.q}`,[]);
+    const res=await askClaude(`Tiff asking about ${sub}. Give: 1) Science-backed answer, 2) One content angle for her education account. Question: ${ai.q}`,[]);
     setAI(p=>({...p,a:res,loading:false}));
   };
   return <div>
@@ -566,8 +626,7 @@ function AIHub(){
     setNewItem({title:"",content:""});
   };
   return <div>
-    <SubNav items={SUBS} active={sub} set={setSub}/>
-    <Heading>{SUBS.find(s=>s.id===sub)?.label}</Heading>
+    <SubNav items={SUBS} active={sub} set={setSub}/><Heading>{SUBS.find(s=>s.id===sub)?.label}</Heading>
     <Card style={{marginBottom:16}}>
       <Inp value={newItem.title} onChange={e=>setNewItem(p=>({...p,title:e.target.value}))} placeholder="Name..." style={{marginBottom:7}}/>
       <Inp value={newItem.content} onChange={e=>setNewItem(p=>({...p,content:e.target.value}))} placeholder="Content, instructions, details..." multi rows={3}/>
@@ -587,36 +646,74 @@ function AIHub(){
 // ── CAPTURE MODAL ─────────────────────────────────────────────────────────────
 function CaptureModal({type,onClose,onSave,curHub}){
   const [text,setText]=useState("");
+  const [priority,setPriority]=useState("Medium");
+  const [area,setArea]=useState("");
   const [bucket,setBucket]=useState("mentor_minutes");
   const [hub,setHub]=useState(curHub||"dashboard");
-  const save=()=>{if(!text.trim())return;onSave({type,text,bucket,hub});onClose()};
+  const [saving,setSaving]=useState(false);
+
+  const save=async()=>{
+    if(!text.trim()||saving)return;
+    setSaving(true);
+    await onSave({type,text,priority,area:area||null,bucket,hub});
+    setSaving(false);
+    onClose();
+  };
+
   return <div onClick={onClose} style={{position:"fixed",inset:0,background:"#000000BB",display:"flex",alignItems:"center",justifyContent:"center",zIndex:999}}>
-    <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:26,width:480,maxWidth:"90vw"}}>
+    <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:26,width:500,maxWidth:"90vw"}}>
       <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:22,color:T.cream,marginBottom:16}}>
         {type==="task"?"New Task":type==="content"?"Content Idea":"Quick Note"}
       </div>
       <Inp value={text} onChange={e=>setText(e.target.value)}
         placeholder={type==="task"?"What needs to get done?":type==="content"?"Hook, idea, script snippet...":"Capture the thought..."}
         multi rows={3}/>
+
+      {type==="task"&&<>
+        <div style={{display:"flex",gap:10,marginTop:13}}>
+          <div style={{flex:1}}>
+            <div style={{fontSize:10,color:T.muted,fontFamily:"'Syne',sans-serif",letterSpacing:".08em",marginBottom:6}}>PRIORITY</div>
+            <div style={{display:"flex",gap:5}}>
+              {PRIORITIES.map(p=><button key={p} onClick={()=>setPriority(p)} style={{
+                background:priority===p?`${PRIORITY_COLORS[p]}22`:"transparent",
+                color:priority===p?PRIORITY_COLORS[p]:T.muted,
+                border:`1px solid ${priority===p?PRIORITY_COLORS[p]+"66":T.border}`,
+                borderRadius:20,padding:"3px 10px",fontSize:11,fontFamily:"'DM Sans',sans-serif",cursor:"pointer"
+              }}>{p}</button>)}
+            </div>
+          </div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:10,color:T.muted,fontFamily:"'Syne',sans-serif",letterSpacing:".08em",marginBottom:6}}>AREA</div>
+            <select value={area} onChange={e=>setArea(e.target.value)}
+              style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,color:area?T.cream:T.muted,
+                padding:"7px 10px",fontFamily:"'DM Sans',sans-serif",fontSize:12,cursor:"pointer",width:"100%"}}>
+              <option value="">No area</option>
+              {AREAS.map(a=><option key={a}>{a}</option>)}
+            </select>
+          </div>
+        </div>
+        <div style={{marginTop:13}}>
+          <div style={{fontSize:10,color:T.muted,fontFamily:"'Syne',sans-serif",letterSpacing:".08em",marginBottom:6}}>HUB</div>
+          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+            {HUBS.map(h=><button key={h.id} onClick={()=>setHub(h.id)} style={{
+              background:hub===h.id?`${T.gold}22`:"transparent",color:hub===h.id?T.gold:T.muted,
+              border:`1px solid ${hub===h.id?T.gold+"66":T.border}`,borderRadius:20,padding:"3px 11px",
+              fontSize:11,fontFamily:"'DM Sans',sans-serif",cursor:"pointer",transition:"all .15s"
+            }}>{h.icon} {h.label}</button>)}
+          </div>
+        </div>
+      </>}
+
       {type==="content"&&<div style={{marginTop:13}}>
-        <div style={{fontSize:10,color:T.muted,fontFamily:"'Syne',sans-serif",letterSpacing:".08em",marginBottom:7}}>BUCKET</div>
+        <div style={{fontSize:10,color:T.muted,fontFamily:"'Syne',sans-serif",letterSpacing:".08em",marginBottom:6}}>BUCKET</div>
         <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
           {BUCKETS.map(b=><BucketPill key={b.id} id={b.id} selected={bucket===b.id} onClick={()=>setBucket(b.id)}/>)}
         </div>
       </div>}
-      {type==="task"&&<div style={{marginTop:13}}>
-        <div style={{fontSize:10,color:T.muted,fontFamily:"'Syne',sans-serif",letterSpacing:".08em",marginBottom:7}}>HUB</div>
-        <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-          {HUBS.map(h=><button key={h.id} onClick={()=>setHub(h.id)} style={{
-            background:hub===h.id?`${T.gold}22`:"transparent",color:hub===h.id?T.gold:T.muted,
-            border:`1px solid ${hub===h.id?T.gold+"66":T.border}`,borderRadius:20,padding:"3px 11px",
-            fontSize:11,fontFamily:"'DM Sans',sans-serif",cursor:"pointer",transition:"all .15s"
-          }}>{h.icon} {h.label}</button>)}
-        </div>
-      </div>}
+
       <div style={{display:"flex",gap:8,marginTop:18,justifyContent:"flex-end"}}>
         <Btn onClick={onClose} variant="ghost">Cancel</Btn>
-        <Btn onClick={save}>Save</Btn>
+        <Btn onClick={save} disabled={saving}>{saving?"Saving...":"Save"}</Btn>
       </div>
     </div>
   </div>;
@@ -628,45 +725,75 @@ export default function SecondBrain(){
   const [tasks,setTasks]=useState([]);
   const [capture,setCapture]=useState(null);
   const [collapsed,setCollapsed]=useState(false);
+  const [syncing,setSyncing]=useState(false);
+  const [lastSync,setLastSync]=useState(null);
+  const [syncError,setSyncError]=useState(false);
 
+  // Inject fonts/styles
   useEffect(()=>{
-    // Inject fonts
     if(!document.getElementById("brain-fonts")){
       const link=document.createElement("link");
-      link.id="brain-fonts";
+      link.id="brain-fonts";link.rel="stylesheet";
       link.href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Syne:wght@400;500;600;700&family=DM+Sans:wght@300;400;500&display=swap";
-      link.rel="stylesheet";
       document.head.appendChild(link);
     }
-    // Inject base styles
     if(!document.getElementById("brain-styles")){
-      const style=document.createElement("style");
-      style.id="brain-styles";
-      style.textContent=`
-        *{box-sizing:border-box}
-        body{background:#0F0D0C;margin:0}
-        ::-webkit-scrollbar{width:4px;height:4px}
-        ::-webkit-scrollbar-track{background:#0f0d0c}
-        ::-webkit-scrollbar-thumb{background:#2e2824;border-radius:4px}
-        textarea{resize:vertical}
-        @keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}
-      `;
+      const style=document.createElement("style");style.id="brain-styles";
+      style.textContent=`*{box-sizing:border-box}body{background:#0F0D0C;margin:0}::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:#2e2824;border-radius:4px}textarea{resize:vertical}@keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}`;
       document.head.appendChild(style);
     }
-    store.get("tasks").then(t=>{if(t)setTasks(t)});
   },[]);
 
-  const handleSave=({type,text,bucket,hub:th})=>{
+  // Sync from Notion on load
+  const syncFromNotion = useCallback(async()=>{
+    setSyncing(true);setSyncError(false);
+    const notionTasks = await fetchNotionTasks();
+    if(notionTasks){
+      setTasks(notionTasks);
+      setLastSync(new Date().toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}));
+    } else {
+      setSyncError(true);
+      // Fall back to local storage
+      const local = await store.get("tasks");
+      if(local) setTasks(local);
+    }
+    setSyncing(false);
+  },[]);
+
+  useEffect(()=>{ syncFromNotion(); },[syncFromNotion]);
+
+  // Persist tasks locally as backup
+  useEffect(()=>{ if(tasks.length>0) store.set("tasks",tasks); },[tasks]);
+
+  const handleSave=async({type,text,priority,area,bucket,hub:th})=>{
     if(type==="task"){
-      const item={id:Date.now(),title:text,hub:th,done:false,at:new Date().toISOString()};
-      const u=[item,...tasks];setTasks(u);store.set("tasks",u);
+      // Optimistically add to UI
+      const tempTask={id:`temp-${Date.now()}`,title:text,priority,area,hub:th,done:false,status:"To Do",at:new Date().toISOString()};
+      setTasks(p=>[tempTask,...p]);
+      // Write to Notion
+      const created = await createNotionTask(text, priority, area);
+      if(created){
+        // Replace temp with real Notion task
+        setTasks(p=>p.map(t=>t.id===tempTask.id?{...created,hub:th}:t));
+      }
     } else if(type==="content"){
       const item={id:Date.now(),title:text,bucket,at:new Date().toISOString()};
       store.get("c_ideas").then(e=>store.set("c_ideas",[item,...(e||[])]));
     }
   };
 
-  const toggleTask=id=>{const u=tasks.map(t=>t.id===id?{...t,done:!t.done}:t);setTasks(u);store.set("tasks",u)};
+  const toggleTask=async(id)=>{
+    const task=tasks.find(t=>t.id===id);
+    if(!task)return;
+    const newStatus=task.done?"To Do":"Done";
+    // Optimistic update
+    setTasks(p=>p.map(t=>t.id===id?{...t,done:!t.done,status:newStatus}:t));
+    // Sync to Notion (skip temp IDs)
+    if(!String(id).startsWith("temp-")){
+      await updateNotionTask(id, newStatus);
+    }
+  };
+
   const pending=tasks.filter(t=>!t.done).length;
 
   return <div style={{display:"flex",height:"100vh",background:T.bg,color:T.cream,fontFamily:"'DM Sans',sans-serif",overflow:"hidden"}}>
@@ -712,7 +839,7 @@ export default function SecondBrain(){
             <Btn onClick={()=>setCapture("task")} variant="soft" sm>+ Task</Btn>
           </div>
         </div>
-        {hub==="dashboard"&&<Dashboard tasks={tasks} toggleTask={toggleTask} openCapture={setCapture}/>}
+        {hub==="dashboard"&&<Dashboard tasks={tasks} toggleTask={toggleTask} openCapture={setCapture} syncing={syncing} lastSync={lastSync} syncError={syncError} onSync={syncFromNotion}/>}
         {hub==="content"&&<ContentHub/>}
         {hub==="brand"&&<BrandHub/>}
         {hub==="college"&&<CollegeHub/>}
