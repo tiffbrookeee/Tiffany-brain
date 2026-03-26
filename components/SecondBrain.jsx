@@ -236,7 +236,7 @@ function CalendarView({tasks, contentItems, gcalEvents, onDayClick}){
               style={{fontSize:9,color:dot.color,background:`${dot.color}18`,borderRadius:4,
                 padding:"1px 5px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
                 border:`1px solid ${dot.color}33`,lineHeight:1.6}}>
-              {dot.type==="task"?"📋":dot.type==="content"?"📱":"📅"} {dot.label}
+              {dot.type==="task"?"[T]":dot.type==="content"?"[C]":"[E]"} {dot.label}
             </div>)}
             {dots.length>3&&<div style={{fontSize:9,color:T.muted,paddingLeft:4}}>+{dots.length-3} more</div>}
           </div>
@@ -396,11 +396,16 @@ function Dashboard({tasks,toggleTask,contentItems,gcalEvents,openCapture,syncing
 
     {/* View toggle */}
     <div style={{display:"flex",gap:4}}>
-      {["calendar","tasks"].map(v=><button key={v} onClick={()=>setView(v)} style={{
-        background:view===v?T.gold:"transparent",color:view===v?"#0F0D0C":T.muted,
-        border:`1px solid ${view===v?T.gold:T.border}`,borderRadius:7,padding:"5px 16px",
+      <button onClick={()=>setView("calendar")} style={{
+        background:view==="calendar"?T.gold:"transparent",color:view==="calendar"?"#0F0D0C":T.muted,
+        border:"1px solid "+(view==="calendar"?T.gold:T.border),borderRadius:7,padding:"5px 16px",
         fontSize:12,fontFamily:"'Syne',sans-serif",fontWeight:600,cursor:"pointer",transition:"all .15s",letterSpacing:".02em"
-      }}>{v==="calendar"?"📅 Calendar":"📋 Tasks"}</button>}
+      }}>Calendar</button>
+      <button onClick={()=>setView("tasks")} style={{
+        background:view==="tasks"?T.gold:"transparent",color:view==="tasks"?"#0F0D0C":T.muted,
+        border:"1px solid "+(view==="tasks"?T.gold:T.border),borderRadius:7,padding:"5px 16px",
+        fontSize:12,fontFamily:"'Syne',sans-serif",fontWeight:600,cursor:"pointer",transition:"all .15s",letterSpacing:".02em"
+      }}>Tasks</button>
     </div>
 
     {/* Calendar or Tasks */}
@@ -698,7 +703,7 @@ function Library({items,onDelete,onPushToNotion,onStatusChange}){
                 </div>
                 {/* First hook preview */}
                 {item.hooks?.[0]&&<div style={{fontSize:12,color:T.muted,fontStyle:"italic",marginBottom:6,lineHeight:1.5}}>
-                  "{item.hooks[0].substring(0,100)}{item.hooks[0].length>100?"...":""}"
+                  &ldquo;{item.hooks[0].substring(0,100)}{item.hooks[0].length>100?"...":""}&rdquo;
                 </div>}
                 <div style={{fontSize:10,color:T.muted}}>{new Date(item.createdAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</div>
               </div>
