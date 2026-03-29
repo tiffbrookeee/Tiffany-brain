@@ -43,7 +43,7 @@ const notion = {
   async getAll(){try{const r=await fetch("/api/notion?type=all");if(!r.ok)return null;return await r.json()}catch{return null}},
   async createTask(title,priority,area){try{const r=await fetch("/api/notion",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"task",title,priority,area})});return(await r.json()).task||null}catch{return null}},
   async createContent(title,hook,notes,contentType){try{const r=await fetch("/api/notion",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"content",title,hook,notes,contentType})});return(await r.json()).content||null}catch{return null}},
-  async updateTask(pageId,status){try{await fetch("/api/notion",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"task",pageId,status})})}catch{}},
+  async updateTask(pageId,updates){try{await fetch("/api/notion",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"task",pageId,...updates})})}catch{}},
   async updateContent(pageId,status){try{await fetch("/api/notion",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:"content",pageId,status})})}catch{}},
 };
 
