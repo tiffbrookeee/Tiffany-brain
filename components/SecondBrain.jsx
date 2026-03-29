@@ -387,17 +387,7 @@ function TaskCards({tasks,toggleTask,updateTask,quickAddTask,openCapture,syncing
       </div>
     </div>
 
-    {/* Brain dump bar */}
-    <div style={{marginBottom:18,display:"flex",alignItems:"center",gap:8,padding:"10px 14px",
-      background:T.surface,border:`1px solid ${T.border}`,borderRadius:10}}>
-      <span style={{fontSize:14}}>🧠</span>
-      <input value={dump} onChange={e=>setDump(e.target.value)} onKeyDown={handleDump}
-        placeholder="Brain dump — type anything and hit Enter to capture instantly..."
-        style={{flex:1,background:"transparent",border:"none",outline:"none",fontSize:13,
-          color:T.cream,fontFamily:"'DM Sans',sans-serif"}}/>
-      {adding&&<span style={{fontSize:11,color:T.muted}}>Saving...</span>}
-      {dump&&!adding&&<span style={{fontSize:10,color:T.muted}}>↵ Enter</span>}
-    </div>
+   <SmartDump quickAddTask={quickAddTask}/>
 
     <div style={{display:"flex",gap:14}}>
       {col("🔴 HIGH",high,T.wine)}
