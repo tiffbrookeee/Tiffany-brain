@@ -408,6 +408,192 @@ function TaskCards({tasks,toggleTask,updateTask,quickAddTask,openCapture,syncing
   </div>;
 }
 
+// ── MORNING RITUAL ────────────────────────────────────────────────────────────
+function MorningRitual({onComplete}){
+  const [step,setStep]=useState(0);
+  const [habits,setHabits]=useState({});
+  const [intentions,setIntentions]=useState(["","",""]);
+  const [question,setQuestion]=useState(null);
+  const [qLoading,setQLoading]=useState(false);
+  const [answer,setAnswer]=useState("");
+  const today=new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
+  const hr=new Date().getHours();
+  const greeting=hr<12?"Good morning":hr<17?"Good afternoon":"Good evening";
+  const STEPS=["Habits","Intentions","Reflection"];
+
+  useEffect(()=>{ if(step===2) genQuestion(); },[step]);
+
+  const genQuestion=async()=>{
+    setQLoading(true);
+    try{
+      const txt=await askClaude(`Give Tiff one short powerful reflection question for ${today}. She's building a brand, starting grad school, figuring it out in real time. Big sister energy — warm but real. Just the question, nothing else. Under 20 words.`,[]);
+      setQuestion(txt.replace(/"/g,"").trim());
+    }catch{ setQuestion("What's one thing you want to feel proud of by the end of today?"); }
+    setQLoading(false);
+  };
+
+  const complete=async()=>{
+    await store.set("morning_complete",new Date().toDateString());
+    await store.set("today_habits",habits);
+    await store.set("today_intentions",intentions.filter(Boolean));
+    onComplete({habits,intentions:intentions.filter(Boolean),reflection:answer});
+  };
+
+  return <div style={{position:"fixed",inset:0,background:T.bg,zIndex:1000,
+    display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'DM Sans',sans-serif"}}>
+    <div style={{width:"100%",maxWidth:520,padding:"0 24px"}}>
+      <div style={{textAlign:"center",marginBottom:36}}>
+        <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:38,color:T.cream,lineHeight:1,marginBottom:6}}>
+          {greeting}, Tiff.
+        </div>
+        <div style={{fontSize:12,color:T.muted,fontFamily:"'Syne',sans-serif",letterSpacing:".08em"}}>{today}</div>
+      </div>
+
+      {/* Step indicator */}
+      <div style={{display:"flex",gap:6,justifyContent:"center",marginBottom:32,alignItems:"center"}}>
+        {STEPS.map((s,i)=><div key={s} style={{display:"flex",alignItems:"center",gap:6}}>
+          <div style={{width:26,height:26,borderRadius:"50%",
+            background:i<step?T.green:i===step?T.gold:T.surface,
+            border:`1px solid ${i<step?T.green:i===step?T.gold:T.border}`,
+            display:"flex",alignItems:"center",justifyContent:"center",
+            fontSize:11,color:i<step?"#fff":i===step?"#0F0D0C":T.muted,
+            fontWeight:500,transition:"all .3s"}}>{i<step?"✓":i+1}</div>
+          {i<STEPS.length-1&&<div style={{width:36,height:1,background:i<step?T.green:T.border,transition:"all .3s"}}/>}
+        </div>)}
+      </div>
+
+      {/* Step 0: Habits */}
+      {step===0&&<Card style={{marginBottom:20}}>
+        <div style={{fontSize:10,color:T.gold,fontFamily:"'Syne',sans-serif",letterSpacing:".1em",marginBottom:16}}>MORNING HABITS</div>
+        {HABITS.map(h=><div key={h.id} onClick={()=>setHabits(p=>({...p,[h.id]:!p[h.id]}))}
+          style={{display:"flex",alignItems:"center",gap:12,padding:"11px 0",
+            borderBottom:`1px solid ${T.border}`,cursor:"pointer"}}
+          onMouseEnter={e=>e.currentTarget.style.opacity=".8"}
+          onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+          <div style={{width:20,height:20,borderRadius:5,flexShrink:0,
+            border:`2px solid ${habits[h.id]?T.green:T.borderLight}`,
+            background:habits[h.id]?T.green:"transparent",
+            display:"flex",alignItems:"center",justifyContent:"center",
+            fontSize:11,color:"#fff",transition:"all .2s"}}>{habits[h.id]?"✓":""}</div>
+          <span style={{fontSize:15}}>{h.emoji}</span>
+          <span style={{fontSize:13,color:habits[h.id]?T.green:T.cream,
+            textDecoration:habits[h.id]?"line-through":"none",transition:"all .2s"}}>{h.label}</span>
+        </div>)}
+        <div style={{display:"flex",justifyContent:"flex-end",marginTop:16}}>
+          <Btn onClick={()=>setStep(1)}>Next →</Btn>
+        </div>
+      </Card>}
+
+      {/* Step 1: Intentions */}
+      {step===1&&<Card style={{marginBottom:20}}>
+        <div style={{fontSize:10,color:T.gold,fontFamily:"'Syne',sans-serif",letterSpacing:".1em",marginBottom:6}}>TODAY'S INTENTIONS</div>
+        <div style={{fontSize:12,color:T.muted,marginBottom:16,lineHeight:1.6}}>What 1–3 things would make today feel like a win?</div>
+        {intentions.map((v,i)=><div key={i} style={{marginBottom:10}}>
+          <Inp value={v} onChange={e=>setIntentions(p=>p.map((x,j)=>j===i?e.target.value:x))}
+            placeholder={`Intention ${i+1}${i===0?" (required)":""}...`}/>
+        </div>)}
+        <div style={{display:"flex",justifyContent:"space-between",marginTop:16}}>
+          <Btn onClick={()=>setStep(0)} variant="ghost">← Back</Btn>
+          <Btn onClick={()=>setStep(2)} disabled={!intentions[0].trim()}>Next →</Btn>
+        </div>
+      </Card>}
+
+      {/* Step 2: Reflection */}
+      {step===2&&<Card style={{marginBottom:20}}>
+        <div style={{fontSize:10,color:T.gold,fontFamily:"'Syne',sans-serif",letterSpacing:".1em",marginBottom:16}}>REFLECTION</div>
+        {qLoading
+          ?<div style={{textAlign:"center",padding:"20px 0",color:T.muted,fontSize:13}}>Generating your question...</div>
+          :<div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:22,color:T.cream,lineHeight:1.4,marginBottom:16}}>{question}</div>}
+        <Inp value={answer} onChange={e=>setAnswer(e.target.value)}
+          placeholder="Take a moment. Write freely..." multi rows={4}/>
+        <div style={{display:"flex",justifyContent:"space-between",marginTop:16}}>
+          <Btn onClick={()=>setStep(1)} variant="ghost">← Back</Btn>
+          <Btn onClick={complete} variant="wine">Start my day →</Btn>
+        </div>
+      </Card>}
+    </div>
+  </div>;
+}
+
+// ── SMART DUMP ────────────────────────────────────────────────────────────────
+function SmartDump({quickAddTask}){
+  const [text,setText]=useState("");
+  const [sorting,setSorting]=useState(false);
+  const [sorted,setSorted]=useState(null);
+  const [saving,setSaving]=useState(false);
+  const [saved,setSaved]=useState(false);
+  const TYPE_COLORS={task:T.wine,content:T.purple,research:T.blue,note:T.muted};
+  const TYPE_EMOJI={task:"📋",content:"🎬",research:"🔍",note:"📝"};
+
+  const sort=async()=>{
+    if(!text.trim()||sorting)return;
+    setSorting(true);setSorted(null);
+    try{
+      const res=await askClaude(`Tiff dumped this thought: "${text}"
+Respond ONLY with valid JSON, no other text:
+{"type":"task"|"content"|"research"|"note","title":"cleaned up version","priority":"High"|"Medium"|"Low","area":"YPO"|"Brand"|"School"|"Personal"|"Café"|"Insurance"|null,"reason":"one short sentence explaining the sort"}
+Rules: task=needs doing, content=content idea or hook, research=something to look up, note=everything else. Priority High if urgent, Medium if soon, Low if whenever.`,[],400);
+      const parsed=JSON.parse(res.replace(/```json|```/g,"").trim());
+      setSorted(parsed);
+    }catch{ setSorted({type:"note",title:text,priority:"Medium",area:null,reason:"Saved as a note."}); }
+    setSorting(false);
+  };
+
+  const confirm=async()=>{
+    if(!sorted||saving)return;
+    setSaving(true);
+    await quickAddTask(sorted.title,sorted.priority||"Medium",sorted.area);
+    setSaved(true);
+    setTimeout(()=>{setText("");setSorted(null);setSaved(false);},1200);
+    setSaving(false);
+  };
+
+  return <div>
+    <div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 16px",
+      background:T.surface,border:`1px solid ${sorted?T.gold:T.border}`,
+      borderRadius:sorted?"12px 12px 0 0":12,transition:"all .2s"}}>
+      <span style={{fontSize:15}}>🧠</span>
+      <input value={text} onChange={e=>{setText(e.target.value);setSorted(null);setSaved(false);}}
+        onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sort();}}}
+        placeholder="Dump anything — idea, task, something to research — hit Enter and AI sorts it..."
+        style={{flex:1,background:"transparent",border:"none",outline:"none",
+          fontSize:13,color:T.cream,fontFamily:"'DM Sans',sans-serif"}}/>
+      {sorting&&<span style={{fontSize:11,color:T.muted}}>Sorting...</span>}
+      {text&&!sorting&&!sorted&&<span style={{fontSize:10,color:T.muted}}>↵ Enter</span>}
+    </div>
+
+    {sorted&&<div style={{background:T.card,border:`1px solid ${T.gold}`,borderTop:"none",
+      borderRadius:"0 0 12px 12px",padding:"12px 16px"}}>
+      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:12}}>
+        <div style={{flex:1}}>
+          <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:7,flexWrap:"wrap"}}>
+            <span style={{fontSize:13}}>{TYPE_EMOJI[sorted.type]}</span>
+            <span style={{fontSize:11,color:TYPE_COLORS[sorted.type],fontWeight:500,
+              background:`${TYPE_COLORS[sorted.type]}18`,border:`1px solid ${TYPE_COLORS[sorted.type]}44`,
+              borderRadius:20,padding:"2px 10px"}}>{sorted.type}</span>
+            {sorted.priority&&<span style={{fontSize:11,color:PRIORITY_COLORS[sorted.priority]||T.muted,
+              background:`${PRIORITY_COLORS[sorted.priority]||T.muted}18`,
+              border:`1px solid ${PRIORITY_COLORS[sorted.priority]||T.muted}44`,
+              borderRadius:20,padding:"2px 10px"}}>{sorted.priority}</span>}
+            {sorted.area&&<span style={{fontSize:11,color:AREA_COLORS[sorted.area]||T.muted,
+              background:`${AREA_COLORS[sorted.area]||T.muted}18`,
+              border:`1px solid ${AREA_COLORS[sorted.area]||T.muted}44`,
+              borderRadius:20,padding:"2px 10px"}}>{sorted.area}</span>}
+          </div>
+          <div style={{fontSize:13,color:T.cream,marginBottom:4,fontWeight:500}}>{sorted.title}</div>
+          <div style={{fontSize:11,color:T.muted,fontStyle:"italic"}}>{sorted.reason}</div>
+        </div>
+        <div style={{display:"flex",gap:6,flexShrink:0}}>
+          {saved
+            ?<span style={{fontSize:12,color:T.green,padding:"6px 12px"}}>✓ Saved</span>
+            :<><Btn onClick={confirm} disabled={saving} sm>{saving?"Saving...":"✓ Save"}</Btn>
+              <Btn onClick={()=>setSorted(null)} variant="ghost" sm>✕</Btn></>}
+        </div>
+      </div>
+    </div>}
+  </div>;
+}
+
 // ── DASHBOARD ─────────────────────────────────────────────────────────────────
 function Dashboard({tasks,toggleTask,updateTask,quickAddTask,contentItems,gcalEvents,openCapture,syncing,lastSync,syncError,onSync}){
   const [brief,setBrief]=useState(null);
