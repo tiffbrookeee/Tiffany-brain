@@ -1131,7 +1131,19 @@ export default function SecondBrain(){
       if(created)setContentItems(p=>p.map(i=>i.id===temp.id?created:i));
     }
   };
+const updateTask=useCallback(async(id,updates)=>{
+  setTasks(p=>p.map(t=>t.id===id?{...t,...updates}:t));
+  if(!String(id).startsWith("temp-"))await notion.updateTask(id,updates);
+},[]);
 
+const quickAddTask=useCallback(async(title)=>{
+  if(!title.trim())return;
+  const temp={id:`temp-${Date.now()}`,title,priority:"Medium",area:null,done:false,status:"To Do",source:"local"};
+  setTasks(p=>[temp,...p]);
+  const created=await notion.createTask(title,"Medium",null);
+  if(created)setTasks(p=>p.map(t=>t.id===temp.id?created:t));
+},[]);
+  
   const toggleTask=async(id)=>{
     const task=tasks.find(t=>t.id===id);if(!task)return;
     const newStatus=task.done?"To Do":"Done";
